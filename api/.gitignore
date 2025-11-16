@@ -16,7 +16,3 @@ dist/
 # Environment variables
 .env
 
-# Alembic
-alembic.ini
-alembic/
-
