@@ -212,6 +212,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     connectedUsersCount,
     anonymousUsersCount,
     sendMessage,
+    // @ts-ignore
   } = useOrbWebSocket({
     orbId,
     username,
