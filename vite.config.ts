@@ -9,6 +9,8 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: [
       'frontend-production-e661.up.railway.app',
+      'corkorb.com',
+      'www.corkorb.com',
       'localhost',
       '.railway.app', // Allow all Railway subdomains
     ],
