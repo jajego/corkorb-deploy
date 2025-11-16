@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { getLatestPaperVector } from '../utils/paper'
 import { serverPaperToPlacedPaper } from '../utils/texture'
-import type { ServerPaper, ViewCenter } from '../../../types/websocket'
+import type { ServerPaper } from '../../../types/websocket'
 import type { PlacedPaper } from '../../../types/orb'
 
 const logger = createLogger('OrbWebSocketHandlers')
@@ -23,8 +23,14 @@ interface UseOrbWebSocketHandlersOptions {
   pendingDeletionsRef: React.MutableRefObject<Set<string>>
   websocketHasLoadedPapersRef: React.MutableRefObject<boolean>
   initialConnectionCompleteRef: React.MutableRefObject<boolean>
+  seenUsersRef: React.MutableRefObject<Set<string>> // Track users seen during initial connection
   sendMessage: (message: unknown, expectResponse: boolean) => Promise<void>
   showToast: (message: React.ReactNode, type: 'info' | 'warning' | 'error', duration?: number) => void
+}
+
+interface ViewCenter {
+  lat: number
+  lon: number
 }
 
 /**
@@ -46,6 +52,7 @@ export function useOrbWebSocketHandlers({
   pendingDeletionsRef,
   websocketHasLoadedPapersRef,
   initialConnectionCompleteRef,
+  seenUsersRef,
   sendMessage: sendMessageFn,
   showToast,
 }: UseOrbWebSocketHandlersOptions) {
@@ -53,7 +60,15 @@ export function useOrbWebSocketHandlers({
     async (papers: ServerPaper[]) => {
       websocketHasLoadedPapersRef.current = true
 
+      // Mark initial connection as complete when we receive state
+      // This happens after the backend has sent all existing users' user_joined messages
+      // At this point, all users seen so far are in seenUsersRef, so future joins will show toasts
       if (!initialConnectionCompleteRef.current) {
+        // First connection - mark as complete (seenUsersRef already has all initial users)
+        initialConnectionCompleteRef.current = true
+      } else {
+        // Reconnection - state was already reset when WebSocket connected
+        // Mark as complete now that we've received state
         initialConnectionCompleteRef.current = true
       }
 
@@ -109,6 +124,7 @@ export function useOrbWebSocketHandlers({
     [
       websocketHasLoadedPapersRef,
       initialConnectionCompleteRef,
+      seenUsersRef,
       optimisticPapersRef,
       optimisticPapersByIdRef,
       optimisticallyDeletedPapersRef,
@@ -497,25 +513,40 @@ export function useOrbWebSocketHandlers({
 
   const onUserJoined = useCallback(
     (otherUserId: string, otherUsername?: string | null) => {
-      // Only show toast for users who join AFTER we've connected
-      // (ignore initial user_joined messages for users already in the orb)
-      // Also ignore our own user_joined message (already filtered in useOrbWebSocket)
-      if (otherUserId !== userId && initialConnectionCompleteRef.current) {
-        // Display username if available, otherwise show "Anonymous User"
-        const isAnonymous = otherUserId.startsWith('user:anonymous:')
-        const displayName =
-          otherUsername ||
-          (isAnonymous ? 'Anonymous User' : otherUserId.length > 8 ? `...${otherUserId.slice(-8)}` : otherUserId)
-        showToast(
-          <>
-            <strong>{displayName}</strong> joined
-          </>,
-          'info',
-          8000 // Show for 8 seconds
-        )
+      // Ignore our own user_joined message (already filtered in useOrbWebSocket)
+      if (otherUserId === userId) {
+        return
       }
+
+      // During initial connection phase, track users as "seen" but don't show toasts
+      if (!initialConnectionCompleteRef.current) {
+        seenUsersRef.current.add(otherUserId)
+        return
+      }
+
+      // After initial connection is complete, only show toast if we haven't seen this user before
+      // This prevents duplicate toasts on reconnection
+      if (seenUsersRef.current.has(otherUserId)) {
+        return
+      }
+
+      // Mark as seen and show toast
+      seenUsersRef.current.add(otherUserId)
+
+      // Display username if available, otherwise show "Anonymous User"
+      const isAnonymous = otherUserId.startsWith('user:anonymous:')
+      const displayName =
+        otherUsername ||
+        (isAnonymous ? 'Anonymous User' : otherUserId.length > 8 ? `...${otherUserId.slice(-8)}` : otherUserId)
+      showToast(
+        <>
+          <strong>{displayName}</strong> joined
+        </>,
+        'info',
+        4000 // Show for 4 seconds
+      )
     },
-    [userId, initialConnectionCompleteRef, showToast]
+    [userId, initialConnectionCompleteRef, seenUsersRef, showToast]
   )
 
   const onUserLeft = useCallback(

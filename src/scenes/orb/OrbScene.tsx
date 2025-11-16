@@ -68,6 +68,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
   const placedPapersRef = useRef<PlacedPaper[]>([])
   const websocketHasLoadedPapersRef = useRef(false)
   const initialConnectionCompleteRef = useRef(false)
+  const seenUsersRef = useRef<Set<string>>(new Set())
   const [cameraOverride, setCameraOverride] = useState<{ radius?: number; phi?: number; theta?: number } | null>(null)
   const [autoRotateEnabled, setAutoRotateEnabled] = useState(false)
   const [autoRotateSpeed, setAutoRotateSpeed] = useState(0.05)
@@ -187,6 +188,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     pendingDeletionsRef,
     websocketHasLoadedPapersRef,
     initialConnectionCompleteRef,
+    seenUsersRef,
     sendMessage: async (message: unknown, expectResponse: boolean): Promise<void> => {
       // Use ref to get sendMessage (will be set after useOrbWebSocket initializes)
       // Gracefully handle case where sendMessage isn't available yet (shouldn't happen in practice)
@@ -223,6 +225,15 @@ export function OrbScene({ orbId }: OrbSceneProps) {
       return sendMessage(message as Parameters<typeof sendMessage>[0], expectResponse)
     }
   }, [sendMessage])
+
+    // Reset connection state when WebSocket connects (handles reconnections)
+  useEffect(() => {
+    if (wsStatus === 'connected') {
+      // Reset state when connecting/reconnecting to track users properly
+      initialConnectionCompleteRef.current = false
+      seenUsersRef.current.clear()
+    }
+  }, [wsStatus])
 
   // Handle paper deletion (must be after sendMessage is available)
   // Memoize callbacks to avoid unnecessary re-renders
