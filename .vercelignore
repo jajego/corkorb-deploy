@@ -1,0 +1,8 @@
+api/
+*.py
+requirements.txt
+alembic.ini
+alembic/
+Procfile
+railway.json
+
