@@ -1,0 +1,46 @@
+.splash-page {
+   background-image: url('/public/textures/office.jpg');
+   background-size: cover;
+   background-position: center;
+   background-repeat: no-repeat;
+   background-attachment: fixed;
+   background-color: #f5f5f5;
+   font-family: 'Courier New, Courier, monospace';
+   color: #333;
+   text-align: center;
+   padding: 20px;
+   /* border-radius: 12px; */
+   /* border: 1px dashed black; */
+}
+
+.about-text-container {
+   width: 100%;
+   display: flex;
+   justify-content: center;
+}
+
+.about-text {
+   font-size: 18px;
+   color: #666;
+   margin-top: 20px;
+   /* margin-bottom: 40px; */
+   font-family: 'Courier New, Courier, monospace';
+   cursor: pointer;
+   /* link blue color; */
+   color: #21639c;
+   text-decoration: underline;
+   text-align: center;
+   width: fit-content;
+   display: flex;
+   justify-content: center;
+   padding: 4px 12px;
+   border-radius: 50px;
+   letter-spacing: 0.5px;
+   /* padding: 20px; */
+   /* border-radius: 12px; */
+   /* border: 2px dashed black; */
+
+   &:hover {
+      color: #094070;
+   }
+}

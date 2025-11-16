@@ -1,0 +1,9 @@
+diff --git a/node_modules/@clerk/shared/dist/runtime/loadClerkJsScript.mjs b/node_modules/@clerk/shared/dist/runtime/loadClerkJsScript.mjs
+index 0000000..1111111 100644
+--- a/node_modules/@clerk/shared/dist/runtime/loadClerkJsScript.mjs
++++ b/node_modules/@clerk/shared/dist/runtime/loadClerkJsScript.mjs
+@@ -12,4 +12,5 @@ import { buildClerkJsScriptAttributes, clerkJsScriptUrl, loadClerkJsScript, set
+-export { buildClerkJsScriptAttributes, clerkJsScriptUrl, loadClerkJsScript, setClerkJsLoadingErrorPackageName };
++export { buildClerkJsScriptAttributes, clerkJsScriptUrl, loadClerkJsScript, setClerkJsLoadingErrorPackageName };
++export { loadClerkJsScript as loadClerkUiScript };
+

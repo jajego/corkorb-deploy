@@ -1,0 +1,42 @@
+.attachHud {
+  position: absolute;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.attachHud button {
+  appearance: none;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #ffc46d 0%, #ff8f38 100%);
+  color: #212127;
+  cursor: pointer;
+  box-shadow:
+    0 18px 40px rgba(255, 149, 41, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.attachHud button:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+}
+
+.attachHud button:active {
+  transform: translateY(0);
+  box-shadow: 0 10px 24px rgba(255, 149, 41, 0.2);
+}
+
+.attachHud button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+
