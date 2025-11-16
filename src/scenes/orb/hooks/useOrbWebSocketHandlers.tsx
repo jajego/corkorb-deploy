@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { getLatestPaperVector } from '../utils/paper'
 import { serverPaperToPlacedPaper } from '../utils/texture'
+import { positionToSpherical } from '../utils/math'
+import { ATTACH_CAMERA_RADIUS } from '../utils/constants'
 import type { ServerPaper } from '../../../types/websocket'
 import type { PlacedPaper } from '../../../types/orb'
 
@@ -25,7 +27,8 @@ interface UseOrbWebSocketHandlersOptions {
   initialConnectionCompleteRef: React.MutableRefObject<boolean>
   seenUsersRef: React.MutableRefObject<Set<string>> // Track users seen during initial connection
   sendMessage: (message: unknown, expectResponse: boolean) => Promise<void>
-  showToast: (message: React.ReactNode, type: 'info' | 'warning' | 'error', duration?: number) => void
+  showToast: (message: React.ReactNode, type: 'info' | 'warning' | 'error', duration?: number, onClick?: () => void) => void
+  setCameraOverride: React.Dispatch<React.SetStateAction<{ radius?: number; phi?: number; theta?: number } | null>>
 }
 
 interface ViewCenter {
@@ -55,6 +58,7 @@ export function useOrbWebSocketHandlers({
   seenUsersRef,
   sendMessage: sendMessageFn,
   showToast,
+  setCameraOverride,
 }: UseOrbWebSocketHandlersOptions) {
   const onState = useCallback(
     async (papers: ServerPaper[]) => {
@@ -188,6 +192,39 @@ export function useOrbWebSocketHandlers({
 
         const convertedPaper = await serverPaperToPlacedPaper(paper)
         if (convertedPaper) {
+          // Show toast for papers created by other users
+          if (paper.user_id !== userId) {
+            // Format display name (matches pattern from user join toasts)
+            const isAnonymous = paper.user_id.startsWith('user:anonymous:')
+            const displayName =
+              paper.username ||
+              (isAnonymous
+                ? 'Anonymous User'
+                : paper.user_id.length > 8
+                  ? `...${paper.user_id.slice(-8)}`
+                  : paper.user_id)
+
+            // Convert paper center to camera coordinates
+            const cameraTarget = positionToSpherical(convertedPaper.center, ATTACH_CAMERA_RADIUS)
+
+            // Show toast with click handler to focus camera on the new paper
+            showToast(
+              <>
+                <strong>{displayName}</strong> pinned an image
+              </>,
+              'info',
+              6000, // 6 seconds duration
+              () => {
+                // Move camera to paper position when toast is clicked
+                setCameraOverride({
+                  radius: ATTACH_CAMERA_RADIUS,
+                  phi: cameraTarget.phi,
+                  theta: cameraTarget.theta,
+                })
+              }
+            )
+          }
+
           setPlacedPapers((prev) => {
             const existingPaperById = prev.find((p) => p.id === paper.id)
             if (existingPaperById) {
@@ -281,6 +318,9 @@ export function useOrbWebSocketHandlers({
       sendMessageFn,
       setPlacedPapers,
       setLastImageVector,
+      userId,
+      showToast,
+      setCameraOverride,
     ]
   )
 
@@ -550,7 +590,7 @@ export function useOrbWebSocketHandlers({
   )
 
   const onUserLeft = useCallback(
-    (otherUserId: string, _otherUsername?: string | null) => {
+    (otherUserId: string) => {
       seenUsersRef.current.delete(otherUserId)
     },
     [seenUsersRef]

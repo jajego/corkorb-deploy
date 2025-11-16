@@ -7,9 +7,9 @@ let toastIdCounter = 0
 export function useToast() {
   const [toasts, setToasts] = useState<Toast[]>([])
 
-  const showToast = useCallback((message: ReactNode, type: ToastType = 'info', duration?: number) => {
+  const showToast = useCallback((message: ReactNode, type: ToastType = 'info', duration?: number, onClick?: () => void) => {
     const id = `toast-${++toastIdCounter}`
-    const toast: Toast = { id, message, type, duration }
+    const toast: Toast = { id, message, type, duration, onClick }
     
     setToasts((prev) => [...prev, toast])
     

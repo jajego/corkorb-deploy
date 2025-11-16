@@ -48,3 +48,32 @@ export function wrapAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle))
 }
 
+/**
+ * Converts a 3D position (Vector3) to spherical camera coordinates.
+ * Used to position the camera to look at a specific point on the orb.
+ * 
+ * @param position - The 3D position vector (e.g., paper center)
+ * @param radius - Optional camera radius (default: uses normalized position)
+ * @returns Spherical coordinates { radius, phi, theta } compatible with camera override
+ */
+export function positionToSpherical(
+  position: THREE.Vector3,
+  radius?: number
+): { radius: number; phi: number; theta: number } {
+  // Normalize the position to get the direction vector
+  const normalized = position.clone().normalize()
+  
+  // Convert to spherical coordinates
+  const spherical = new THREE.Spherical().setFromVector3(normalized)
+  
+  // Use provided radius or keep the normalized radius (which will be 1.0)
+  // For camera positioning, we typically want a fixed zoom level
+  const cameraRadius = radius ?? spherical.radius
+  
+  return {
+    radius: cameraRadius,
+    phi: spherical.phi,
+    theta: spherical.theta,
+  }
+}
+

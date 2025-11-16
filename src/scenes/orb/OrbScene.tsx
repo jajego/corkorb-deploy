@@ -204,6 +204,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
       await sendMessageRef.current(message, expectResponse)
     },
     showToast,
+    setCameraOverride,
   })
 
   // WebSocket integration
@@ -456,6 +457,78 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     }
   }, [pendingStage, updatePointer])
 
+  // Clear camera override when camera reaches target (for toast click-to-focus)
+  // Only clear if not in attach mode (attach mode manages its own override)
+  useEffect(() => {
+    if (!cameraOverride || attachActive) return undefined
+
+    const targetRadius = cameraOverride.radius
+    const targetPhi = cameraOverride.phi
+    const targetTheta = cameraOverride.theta
+
+    // Check if camera is close enough to target
+    const radiusDiff = targetRadius !== undefined ? Math.abs(cameraSpherical.radius - targetRadius) : 0
+    const phiDiff = targetPhi !== undefined ? Math.abs(cameraSpherical.phi - targetPhi) : 0
+    const thetaDiff = targetTheta !== undefined ? Math.abs(wrapAngle(cameraSpherical.theta - targetTheta)) : 0
+
+    const THRESHOLD = 0.05 // Close enough threshold (adjust as needed)
+    const isCloseEnough = 
+      (targetRadius === undefined || radiusDiff < THRESHOLD) &&
+      (targetPhi === undefined || phiDiff < THRESHOLD) &&
+      (targetTheta === undefined || thetaDiff < THRESHOLD)
+
+    if (isCloseEnough) {
+      // Camera has reached target, clear override after a short delay to ensure smooth transition
+      const timeout = window.setTimeout(() => {
+        setCameraOverride(null)
+      }, 200) // Small delay to ensure we're fully at target
+      return () => {
+        window.clearTimeout(timeout)
+      }
+    }
+  }, [cameraOverride, cameraSpherical, attachActive, setCameraOverride])
+
+  // Clear camera override when user starts interacting (dragging)
+  useEffect(() => {
+    if (!cameraOverride || attachActive) return undefined
+
+    if (draggingOrb) {
+      // User started dragging, clear override to allow free movement
+      setCameraOverride(null)
+    }
+  }, [draggingOrb, cameraOverride, attachActive, setCameraOverride])
+
+  // Clear camera override on wheel zoom (user manually zooming)
+  // Use ref to avoid recreating listener on every render
+  const wheelClearOverrideRef = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    if (!cameraOverride || attachActive || !cameraInteractionEnabled) {
+      // Clean up if listener exists but conditions no longer met
+      if (wheelClearOverrideRef.current) {
+        window.removeEventListener('wheel', wheelClearOverrideRef.current)
+        wheelClearOverrideRef.current = null
+      }
+      return undefined
+    }
+
+    // Only add listener if it doesn't already exist
+    if (!wheelClearOverrideRef.current) {
+      const handleWheel = () => {
+        // User is zooming, clear override to allow free movement
+        setCameraOverride(null)
+      }
+      wheelClearOverrideRef.current = handleWheel
+      window.addEventListener('wheel', handleWheel, { passive: true })
+    }
+
+    return () => {
+      if (wheelClearOverrideRef.current) {
+        window.removeEventListener('wheel', wheelClearOverrideRef.current)
+        wheelClearOverrideRef.current = null
+      }
+    }
+  }, [cameraOverride, attachActive, cameraInteractionEnabled, setCameraOverride])
+
   const sortedPlacedPapers = useMemo(
     () => [...placedPapers].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [placedPapers]
@@ -580,12 +653,13 @@ export function OrbScene({ orbId }: OrbSceneProps) {
   }
 
 
+  // Camera override: use attach mode radius when in attach mode, otherwise use cameraOverride directly
   const cameraOverrideTarget = attachActive
     ? {
         radius: ATTACH_CAMERA_RADIUS,
         ...(cameraOverride ?? {}),
       }
-    : null
+    : cameraOverride ?? null
 
   const pointerForInteraction = state.pointer.hasPointer
     ? state.pointer

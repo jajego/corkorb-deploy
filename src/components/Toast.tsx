@@ -8,6 +8,7 @@ export interface Toast {
   message: ReactNode
   type: ToastType
   duration?: number // Duration in ms (default: 5000)
+  onClick?: () => void // Optional click handler
 }
 
 interface ToastProps {
@@ -49,13 +50,35 @@ export function ToastComponent({ toast, onDismiss }: ToastProps) {
     }
   }, [toast.id, toast.duration, handleDismiss])
 
+  const handleClick = useCallback((event: React.MouseEvent) => {
+    // Don't trigger onClick if clicking the dismiss button
+    if ((event.target as HTMLElement).closest('.toast__dismiss')) {
+      return
+    }
+    // Don't trigger if toast is being removed
+    if (isRemovingRef.current) {
+      return
+    }
+    // Trigger onClick if provided
+    if (toast.onClick) {
+      toast.onClick()
+    }
+  }, [toast.onClick, toast.id])
+
   return (
-    <div className={`toast toast--${toast.type} ${isRemoving ? 'toast--removing' : ''}`}>
+    <div 
+      className={`toast toast--${toast.type} ${isRemoving ? 'toast--removing' : ''} ${toast.onClick ? 'toast--clickable' : ''}`}
+      onClick={toast.onClick ? handleClick : undefined}
+      style={{ cursor: toast.onClick ? 'pointer' : 'default' }}
+    >
       <div className="toast__content">
         <span className="toast__message">{toast.message}</span>
         <button
           className="toast__dismiss"
-          onClick={handleDismiss}
+          onClick={(e) => {
+            e.stopPropagation() // Prevent triggering toast onClick
+            handleDismiss()
+          }}
           aria-label="Dismiss"
         >
           ×
