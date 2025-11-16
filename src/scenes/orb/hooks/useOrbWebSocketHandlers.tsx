@@ -550,11 +550,10 @@ export function useOrbWebSocketHandlers({
   )
 
   const onUserLeft = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    (_otherUserId: string, _otherUsername?: string | null) => {
-      // User left (no special handling needed in OrbScene, but keep signature for consistency)
+    (otherUserId: string, _otherUsername?: string | null) => {
+      seenUsersRef.current.delete(otherUserId)
     },
-    []
+    [seenUsersRef]
   )
 
   const onError = useCallback(
