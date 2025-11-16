@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { getLatestPaperVector } from '../utils/paper'
 import { serverPaperToPlacedPaper } from '../utils/texture'
-import type { ServerPaper } from '../../../types/websocket'
+import type { ServerPaper, ViewCenter } from '../../../types/websocket'
 import type { PlacedPaper } from '../../../types/orb'
 
 const logger = createLogger('OrbWebSocketHandlers')
@@ -25,11 +25,6 @@ interface UseOrbWebSocketHandlersOptions {
   initialConnectionCompleteRef: React.MutableRefObject<boolean>
   sendMessage: (message: unknown, expectResponse: boolean) => Promise<void>
   showToast: (message: React.ReactNode, type: 'info' | 'warning' | 'error', duration?: number) => void
-}
-
-interface ViewCenter {
-  lat: number
-  lon: number
 }
 
 /**
