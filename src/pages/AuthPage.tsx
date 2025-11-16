@@ -64,16 +64,6 @@ export function AuthPage() {
     )
   }
 
-  const handleSwitchToSignIn = () => {
-    navigate('/sign-in')
-    setShowSignUp(false)
-  }
-
-  const handleSwitchToSignUp = () => {
-    navigate('/sign-up')
-    setShowSignUp(true)
-  }
-
   return (
     <div style={{
       display: 'flex',

@@ -28,7 +28,7 @@ class Logger {
     return levels.indexOf(level) >= levels.indexOf(this.level)
   }
 
-  private formatMessage(level: LogLevel, message: string): string {
+  private formatMessage(_level: LogLevel, message: string): string {
     const prefix = this.prefix ? `[${this.prefix}]` : ''
     return `${prefix} ${message}`
   }

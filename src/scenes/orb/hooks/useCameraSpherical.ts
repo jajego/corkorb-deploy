@@ -2,12 +2,6 @@ import { useCallback, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { initialSpherical, SPHERICAL_EPSILON, SPHERICAL_UPDATE_INTERVAL_MS } from '../utils/constants'
 
-interface CameraSpherical {
-  radius: number
-  phi: number
-  theta: number
-}
-
 export function useCameraSpherical() {
   const cameraSphericalRef = useRef({ ...initialSpherical })
   const lastSphericalUpdateRef = useRef(0)

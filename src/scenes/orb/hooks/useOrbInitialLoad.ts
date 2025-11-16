@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@clerk/react'
+import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { serverPaperToPlacedPaper } from '../utils/texture'
 import { getLatestPaperVector } from '../utils/paper'
@@ -28,7 +29,7 @@ export function useOrbInitialLoad({
   setLastImageVector,
   placedPapersRef,
 }: UseOrbInitialLoadOptions) {
-  const { getToken, userId } = useAuth()
+  const { getToken } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {

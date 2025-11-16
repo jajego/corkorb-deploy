@@ -1,5 +1,4 @@
 import { useCallback } from 'react'
-import { useAuth } from '@clerk/react'
 import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { getLatestPaperVector } from '../utils/paper'
@@ -35,9 +34,7 @@ export function usePaperDeletion({
   deletionInProgressRef,
   sendMessage,
   orbId,
-  onError,
 }: UsePaperDeletionOptions) {
-  const { userId } = useAuth()
 
   const rollbackPaperDeletion = useCallback(
     (paperId: string) => {

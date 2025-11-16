@@ -1,6 +1,5 @@
-import { useCallback, useRef } from 'react'
-import { useAuth, useUser } from '@clerk/react'
-import * as THREE from 'three'
+import { useCallback } from 'react'
+import { useAuth } from '@clerk/react'
 
 import { fileToDataUrl } from '../../../utils/fileToDataUrl'
 import { compressImage, compressedImageToFile, type CompressedImage } from '../../../utils/compressImage'
@@ -29,12 +28,10 @@ export function usePaperUpload({
   onError,
   nextLayerOffset,
 }: UsePaperUploadOptions) {
-  const { userId, isSignedIn } = useAuth()
-  const { user } = useUser()
-  const username = user?.username || null
+  const { isSignedIn, userId } = useAuth()
 
   const handleFileSelection = useCallback(
-    async (file: File, pointerX?: number, pointerY?: number) => {
+    async (file: File, _pointerX?: number, _pointerY?: number) => {
       // Check if user is signed in before allowing file upload
       if (!isSignedIn) {
         onError('You must create an account to pin images.')

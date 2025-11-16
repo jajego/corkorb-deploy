@@ -25,9 +25,6 @@ export interface CaptureResult {
   url: string
 }
 
-// Re-export for convenience
-export type { CaptureOptions, CaptureResult }
-
 /**
  * Captures frames from canvas and creates a video using MediaRecorder.
  * Uses WebP if supported, otherwise falls back to WebM.

@@ -1,65 +1,623 @@
-import { useAuth } from '@clerk/react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback } from 'react'
+import * as THREE from 'three'
+import { createLogger } from '../../../utils/logger'
+import { getLatestPaperVector } from '../utils/paper'
+import { serverPaperToPlacedPaper } from '../utils/texture'
+import type { ServerPaper, ViewCenter } from '../../../types/websocket'
+import type { PlacedPaper } from '../../../types/orb'
 
-import { createLogger } from '../utils/logger'
-import type { WebSocketMessage, ServerPaper, ViewCenter } from '../types/websocket'
+const logger = createLogger('OrbWebSocketHandlers')
 
-const logger = createLogger('WebSocket')
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-
-type WebSocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
-
-interface UseOrbWebSocketOptions {
+interface UseOrbWebSocketHandlersOptions {
   orbId: string
-  username?: string | null
-  onState?: (papers: ServerPaper[]) => void
-  onPaperCreated?: (paper: ServerPaper) => void
-  onPaperDeleted?: (paperId: string, reason?: string) => void
-  onUserJoined?: (userId: string, username?: string | null) => void
-  onUserLeft?: (userId: string, username?: string | null) => void
-  onViewCenterUpdate?: (userId: string, viewCenter: ViewCenter) => void
-  onError?: (error: string) => void
-  enabled?: boolean
+  userId: string | null
+  placedPapersRef: React.MutableRefObject<PlacedPaper[]>
+  setPlacedPapers: React.Dispatch<React.SetStateAction<PlacedPaper[]>>
+  setLastImageVector: React.Dispatch<React.SetStateAction<THREE.Vector3 | null>>
+  optimisticPapersRef: React.MutableRefObject<Map<string, string>>
+  optimisticPapersByIdRef: React.MutableRefObject<Map<string, string>>
+  optimisticallyDeletedPapersRef: React.MutableRefObject<Map<string, PlacedPaper | null>>
+  optimisticallyDeletedSourceUrlsRef: React.MutableRefObject<Set<string>>
+  deletionInProgressRef: React.MutableRefObject<Set<string>>
+  processingPapersRef: React.MutableRefObject<Set<string>>
+  pendingDeletionsRef: React.MutableRefObject<Set<string>>
+  websocketHasLoadedPapersRef: React.MutableRefObject<boolean>
+  initialConnectionCompleteRef: React.MutableRefObject<boolean>
+  sendMessage: (message: unknown, expectResponse: boolean) => Promise<void>
+  showToast: (message: React.ReactNode, type: 'info' | 'warning' | 'error', duration?: number) => void
 }
 
-interface QueuedMessage {
-  type: string
-  [key: string]: unknown
-}
-
-interface PendingRequest {
-  resolve: (value: unknown) => void
-  reject: (error: Error) => void
-}
-
-export function useOrbWebSocket({
+/**
+ * Handles all WebSocket event callbacks for the orb.
+ * Manages paper state synchronization, optimistic updates, and error handling.
+ */
+export function useOrbWebSocketHandlers({
   orbId,
-  username,
-  onState,
-  onPaperCreated,
-  onPaperDeleted,
-  onUserJoined,
-  onUserLeft,
-  onViewCenterUpdate,
-  onError,
-  enabled = true,
-}: UseOrbWebSocketOptions) {
-  const { getToken, isSignedIn, userId: authUserId } = useAuth()
-  const [status, setStatus] = useState<WebSocketStatus>('disconnected')
-  const [connectedUsers, setConnectedUsers] = useState<Set<string>>(new Set())
-  const [anonymousUsers, setAnonymousUsers] = useState<Set<string>>(new Set())
-  const wsRef = useRef<WebSocket | null>(null)
-  const currentUserIdRef = useRef<string | null>(null) // Track current user's ID
-  const reconnectTimeoutRef = useRef<number | null>(null)
-  const reconnectAttemptsRef = useRef(0)
-  const messageQueueRef = useRef<QueuedMessage[]>([])
-  const requestIdCounterRef = useRef(0)
-  const pendingRequestsRef = useRef<Map<string, PendingRequest>>(new Map())
-  const wasHiddenRef = useRef<boolean>(false)
-  
-  // Use refs for callbacks to prevent reconnection loops
-  const callbacksRef = useRef({
+  userId,
+  placedPapersRef,
+  setPlacedPapers,
+  setLastImageVector,
+  optimisticPapersRef,
+  optimisticPapersByIdRef,
+  optimisticallyDeletedPapersRef,
+  optimisticallyDeletedSourceUrlsRef,
+  deletionInProgressRef,
+  processingPapersRef,
+  pendingDeletionsRef,
+  websocketHasLoadedPapersRef,
+  initialConnectionCompleteRef,
+  sendMessage: sendMessageFn,
+  showToast,
+}: UseOrbWebSocketHandlersOptions) {
+  const onState = useCallback(
+    async (papers: ServerPaper[]) => {
+      websocketHasLoadedPapersRef.current = true
+
+      if (!initialConnectionCompleteRef.current) {
+        initialConnectionCompleteRef.current = true
+      }
+
+      // Convert server papers to client papers
+      const convertedPapers = await Promise.all(papers.map((paper) => serverPaperToPlacedPaper(paper)))
+      const validPapers = convertedPapers.filter((paper): paper is PlacedPaper => paper !== null)
+
+      // Preserve optimistic papers that haven't been replaced yet
+      // Also respect optimistically deleted papers (don't re-add them from server state)
+      setPlacedPapers((prev) => {
+        const optimisticPapersToKeep = prev.filter((paper) => {
+          if (paper.id.startsWith('optimistic-')) {
+            for (const [paperId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
+              if (optimisticId === paper.id) {
+                const serverPaper = papers.find((p) => p.id === paperId)
+                return !serverPaper
+              }
+            }
+            for (const [sourceUrl, optimisticId] of optimisticPapersRef.current.entries()) {
+              if (optimisticId === paper.id) {
+                const serverPaper = papers.find((p) => p.source_url === sourceUrl)
+                return !serverPaper
+              }
+            }
+          }
+          return false
+        })
+
+        const validPapersFiltered = validPapers.filter((paper) => {
+          // Skip papers that were optimistically deleted
+          const wasDeleted = optimisticallyDeletedPapersRef.current.has(paper.id)
+          if (wasDeleted) {
+            const deletedPaper = optimisticallyDeletedPapersRef.current.get(paper.id)
+            if (!deletedPaper) {
+              optimisticallyDeletedPapersRef.current.delete(paper.id)
+            }
+            return false
+          }
+          // Skip papers that were deleted before they were created (pending deletions)
+          if (pendingDeletionsRef.current.has(paper.id)) {
+            pendingDeletionsRef.current.delete(paper.id)
+            return false
+          }
+          return true
+        })
+
+        const merged = [...validPapersFiltered, ...optimisticPapersToKeep]
+        setLastImageVector(getLatestPaperVector(merged))
+        placedPapersRef.current = merged
+        return merged
+      })
+    },
+    [
+      websocketHasLoadedPapersRef,
+      initialConnectionCompleteRef,
+      optimisticPapersRef,
+      optimisticPapersByIdRef,
+      optimisticallyDeletedPapersRef,
+      pendingDeletionsRef,
+      setPlacedPapers,
+      setLastImageVector,
+      placedPapersRef,
+    ]
+  )
+
+  const onPaperCreated = useCallback(
+    async (paper: ServerPaper) => {
+      if (processingPapersRef.current.has(paper.id)) {
+        return
+      }
+
+      const paperAlreadyExists = placedPapersRef.current.find((p) => p.id === paper.id)
+      if (paperAlreadyExists) {
+        return
+      }
+
+      processingPapersRef.current.add(paper.id)
+
+      const paperExistsAfterFlag = placedPapersRef.current.find((p) => p.id === paper.id)
+      if (paperExistsAfterFlag) {
+        processingPapersRef.current.delete(paper.id)
+        return
+      }
+
+      try {
+        // Check if this paper was deleted before it was created (late deletion)
+        if (pendingDeletionsRef.current.has(paper.id)) {
+          pendingDeletionsRef.current.delete(paper.id)
+          optimisticPapersByIdRef.current.delete(paper.id)
+          if (paper.source_url) {
+            optimisticPapersRef.current.delete(paper.source_url)
+          }
+          processingPapersRef.current.delete(paper.id)
+          return
+        }
+
+        if (optimisticallyDeletedPapersRef.current.has(paper.id)) {
+          processingPapersRef.current.delete(paper.id)
+          return
+        }
+
+        if (optimisticallyDeletedSourceUrlsRef.current.has(paper.source_url)) {
+          optimisticallyDeletedSourceUrlsRef.current.delete(paper.source_url)
+          optimisticPapersByIdRef.current.delete(paper.id)
+          sendMessageFn(
+            {
+              type: 'delete_paper',
+              orb_id: orbId,
+              paper_id: paper.id,
+            },
+            false
+          )
+          processingPapersRef.current.delete(paper.id)
+          return
+        }
+
+        const convertedPaper = await serverPaperToPlacedPaper(paper)
+        if (convertedPaper) {
+          setPlacedPapers((prev) => {
+            const existingPaperById = prev.find((p) => p.id === paper.id)
+            if (existingPaperById) {
+              return prev
+            }
+
+            placedPapersRef.current = prev
+
+            const optimisticIdFromPaperId = optimisticPapersByIdRef.current.get(paper.id)
+            const optimisticIdFromSourceUrl = optimisticPapersRef.current.get(paper.source_url)
+            const optimisticPaperInState = prev.find(
+              (p) =>
+                p.id.startsWith('optimistic-') &&
+                (optimisticIdFromPaperId === p.id || optimisticIdFromSourceUrl === p.id)
+            )
+            const optimisticId = optimisticIdFromPaperId || optimisticIdFromSourceUrl || optimisticPaperInState?.id
+
+            if (optimisticId || optimisticPaperInState) {
+              // Use the ID from state if mapping is missing (handles race condition)
+              const actualOptimisticId = optimisticPaperInState?.id || optimisticId
+              const optimisticPaper = optimisticPaperInState || prev.find((p) => p.id === actualOptimisticId)
+
+              if (optimisticPaper) {
+                // Dispose the optimistic paper's texture if different
+                if (optimisticPaper.texture && optimisticPaper.texture !== convertedPaper.texture) {
+                  optimisticPaper.texture.dispose()
+                }
+
+                // Remove ALL optimistic papers with this sourceUrl and add real paper in one atomic update
+                const updated = prev.filter((p) => {
+                  if (p.id === actualOptimisticId) return false
+                  if (p.id.startsWith('optimistic-') && p.sourceUrl === paper.source_url) {
+                    p.texture?.dispose()
+                    return false
+                  }
+                  if (p.id === paper.id) return false
+                  return true
+                })
+                updated.push(convertedPaper)
+                setLastImageVector(getLatestPaperVector(updated))
+                placedPapersRef.current = updated
+                return updated
+              } else {
+                const updated = [...prev, convertedPaper]
+                setLastImageVector(getLatestPaperVector(updated))
+                placedPapersRef.current = updated
+                return updated
+              }
+            } else {
+              // No optimistic paper - check for unexpected optimistic papers with this sourceUrl
+              const anyOptimisticWithSourceUrl = prev.find(
+                (p) => p.id.startsWith('optimistic-') && p.sourceUrl === paper.source_url
+              )
+              if (anyOptimisticWithSourceUrl) {
+                const updated = prev.filter((p) => p.id !== anyOptimisticWithSourceUrl.id)
+                anyOptimisticWithSourceUrl.texture?.dispose()
+                updated.push(convertedPaper)
+                setLastImageVector(getLatestPaperVector(updated))
+                placedPapersRef.current = updated
+                return updated
+              }
+
+              // Final check: ensure paper isn't already in prev
+              const alreadyInPrev = prev.find((p) => p.id === paper.id)
+              if (alreadyInPrev) {
+                return prev
+              }
+
+              const updated = [...prev, convertedPaper]
+              setLastImageVector(getLatestPaperVector(updated))
+              placedPapersRef.current = updated
+              return updated
+            }
+          })
+        } else {
+          logger.error(`onPaperCreated: Failed to convert server paper ${paper.id}`)
+        }
+      } finally {
+        processingPapersRef.current.delete(paper.id)
+      }
+    },
+    [
+      processingPapersRef,
+      placedPapersRef,
+      pendingDeletionsRef,
+      optimisticPapersByIdRef,
+      optimisticPapersRef,
+      optimisticallyDeletedPapersRef,
+      optimisticallyDeletedSourceUrlsRef,
+      orbId,
+      sendMessageFn,
+      setPlacedPapers,
+      setLastImageVector,
+    ]
+  )
+
+  const onPaperDeleted = useCallback(
+    (paperId: string, reason?: string) => {
+      logger.info(`onPaperDeleted called for paper: ${paperId}, reason: ${reason}`)
+
+      // Clean up deletion in progress tracking
+      deletionInProgressRef.current.delete(paperId)
+
+      // Mark this paper as pending deletion (in case it hasn't been created yet)
+      // This prevents the paper from appearing if paper_created arrives later
+      pendingDeletionsRef.current.add(paperId)
+
+      // Try to find the paper by real ID first
+      let deletedPaper = placedPapersRef.current.find((paper) => paper.id === paperId)
+      let optimisticId: string | undefined
+
+      // If not found by real ID, try to find via optimistic mapping
+      if (!deletedPaper) {
+        optimisticId = optimisticPapersByIdRef.current.get(paperId)
+        if (optimisticId) {
+          deletedPaper = placedPapersRef.current.find((paper) => paper.id === optimisticId)
+        }
+      }
+
+      // If still not found, try to find by searching all optimistic papers
+      if (!deletedPaper) {
+        const allOptimisticPapers = placedPapersRef.current.filter((p) => p.id.startsWith('optimistic-'))
+        for (const optPaper of allOptimisticPapers) {
+          for (const [mappedPaperId, mappedOptId] of optimisticPapersByIdRef.current.entries()) {
+            if (mappedPaperId === paperId && mappedOptId === optPaper.id) {
+              deletedPaper = optPaper
+              optimisticId = optPaper.id
+              break
+            }
+          }
+          if (deletedPaper) break
+        }
+      }
+
+      // If still not found and it's an NSFW deletion for current user, try to find by checking
+      // all optimistic papers from current user
+      if (!deletedPaper && reason === 'nsfw_violation' && userId) {
+        const currentUserOptimisticPapers = placedPapersRef.current.filter(
+          (p) => p.id.startsWith('optimistic-') && p.userId === userId
+        )
+        if (currentUserOptimisticPapers.length === 1) {
+          const singleOptimisticPaper = currentUserOptimisticPapers[0]
+          let isMappedToOtherPaper = false
+          for (const [mappedPaperId, mappedOptId] of optimisticPapersByIdRef.current.entries()) {
+            if (mappedOptId === singleOptimisticPaper.id && mappedPaperId !== paperId) {
+              isMappedToOtherPaper = true
+              break
+            }
+          }
+          if (!isMappedToOtherPaper) {
+            deletedPaper = singleOptimisticPaper
+            optimisticId = singleOptimisticPaper.id
+          }
+        }
+      }
+
+      const actualPaperId = deletedPaper?.id || paperId
+      const isCurrentUserPaper = deletedPaper && deletedPaper.userId === userId
+      if (reason === 'nsfw_violation' && isCurrentUserPaper) {
+        showToast('Your image was removed due to content violation', 'warning', 8000)
+      }
+
+      if (!optimisticallyDeletedPapersRef.current.has(paperId)) {
+        optimisticallyDeletedPapersRef.current.set(paperId, null)
+      }
+      const optimisticallyDeletedPaper = optimisticallyDeletedPapersRef.current.get(paperId)
+      if (optimisticallyDeletedPaper) {
+        optimisticallyDeletedPapersRef.current.delete(paperId)
+
+        if (optimisticallyDeletedPaper.texture) {
+          optimisticallyDeletedPaper.texture.dispose()
+        }
+
+        setPlacedPapers((prev) => {
+          const filtered = prev.filter((paper) => {
+            if (paper.id === actualPaperId || paper.id === paperId) return false
+            if (optimisticId && paper.id === optimisticId) return false
+            return true
+          })
+          if (filtered.length !== prev.length) {
+            setLastImageVector(getLatestPaperVector(filtered))
+          }
+          placedPapersRef.current = filtered
+          return filtered
+        })
+        pendingDeletionsRef.current.delete(paperId)
+        return
+      }
+
+      setPlacedPapers((prev) => {
+        // Use the latest state from ref to ensure we have the most up-to-date papers
+        // This handles race conditions where prev might be stale
+        const currentPapers = placedPapersRef.current.length > 0 ? placedPapersRef.current : prev
+
+        // Try to find the paper by actualPaperId, paperId, or optimisticId
+        // Check both prev (from state) and currentPapers (from ref) to handle race conditions
+        let paperExists = prev.find((paper) => {
+          if (paper.id === actualPaperId) return true
+          if (paper.id === paperId) return true
+          if (optimisticId && paper.id === optimisticId) return true
+          return false
+        })
+
+        // If not found in prev, check currentPapers (ref) - handles race conditions
+        if (!paperExists && currentPapers !== prev) {
+          paperExists = currentPapers.find((paper) => {
+            if (paper.id === actualPaperId) return true
+            if (paper.id === paperId) return true
+            if (optimisticId && paper.id === optimisticId) return true
+            return false
+          })
+        }
+
+        if (!paperExists) {
+          // Paper not found in state - mark as pending deletion so it won't appear if paper_created arrives later
+          optimisticPapersByIdRef.current.delete(paperId)
+          return prev
+        }
+
+        // Remove by all possible IDs (real ID, optimistic ID, and the actual paper ID)
+        // Also remove by found paper ID to handle any edge cases
+        // This ensures the paper is removed even if ID matching is off by one character or has whitespace issues
+        const idsToRemove = new Set([actualPaperId, paperId, paperExists!.id])
+        if (optimisticId) {
+          idsToRemove.add(optimisticId)
+        }
+
+        // If we found a paper with a sourceUrl, also remove any other papers with the same sourceUrl
+        // (defensive: handles edge cases where multiple papers share the same sourceUrl)
+        // We do this in a single pass with the main filter to avoid multiple iterations
+        const sourceUrlToMatch = paperExists?.sourceUrl
+
+        // Remove all papers that match any of the IDs we want to remove
+        // Single pass: removes by ID AND by sourceUrl match (if applicable)
+        const filtered = prev.filter((paper) => {
+          // Remove if it matches any of the IDs we want to remove
+          if (idsToRemove.has(paper.id)) return false
+
+          // Also remove if it has the same sourceUrl as the deleted paper (defensive)
+          // This handles edge cases but should be rare in practice
+          if (sourceUrlToMatch && paper.sourceUrl === sourceUrlToMatch) {
+            return false
+          }
+
+          return true
+        })
+
+        // Verify that we actually removed the paper
+        if (filtered.length === prev.length && paperExists) {
+          // Paper wasn't removed - this is unexpected, log it as a warning
+          logger.warn(
+            `onPaperDeleted: Failed to remove paper ${paperId} from state. ` +
+              `Paper exists with ID: ${paperExists.id}, ` +
+              `IDs to remove: ${Array.from(idsToRemove).join(', ')}, ` +
+              `prev papers: ${prev.map((p) => `${p.id}(${p.userId})`).join(', ')}, ` +
+              `filtered papers: ${filtered.map((p) => `${p.id}(${p.userId})`).join(', ')}`
+          )
+          // Try a more aggressive removal - remove by found paper ID directly
+          const aggressiveFiltered = prev.filter((paper) => paper.id !== paperExists.id)
+          if (aggressiveFiltered.length < prev.length) {
+            logger.info(`onPaperDeleted: Successfully removed paper ${paperExists.id} using aggressive filter (fallback)`)
+            setLastImageVector(getLatestPaperVector(aggressiveFiltered))
+            placedPapersRef.current = aggressiveFiltered
+            // Clean up mappings
+            optimisticPapersByIdRef.current.delete(paperId)
+            if (paperExists.sourceUrl) {
+              optimisticPapersRef.current.delete(paperExists.sourceUrl)
+            }
+            if (paperExists.texture) {
+              paperExists.texture.dispose()
+            }
+            pendingDeletionsRef.current.delete(paperId)
+            return aggressiveFiltered
+          }
+          // Still couldn't remove it - this is a bug, but return prev unchanged
+          logger.error(
+            `onPaperDeleted: CRITICAL - Could not remove paper ${paperId} even with aggressive filter. ` +
+              `This indicates a bug in the deletion logic. Paper exists: ${paperExists.id}, ` +
+              `prev count: ${prev.length}, filtered count: ${aggressiveFiltered.length}`
+          )
+          return prev
+        }
+
+        setLastImageVector(getLatestPaperVector(filtered))
+
+        // Clean up paper ID mapping
+        optimisticPapersByIdRef.current.delete(paperId)
+        // Clean up source URL mapping
+        if (paperExists.sourceUrl) {
+          optimisticPapersRef.current.delete(paperExists.sourceUrl)
+        }
+        // Clean up any mappings that point to the optimistic ID we found
+        if (optimisticId) {
+          for (const [mappedPaperId, mappedOptId] of optimisticPapersByIdRef.current.entries()) {
+            if (mappedOptId === optimisticId) {
+              optimisticPapersByIdRef.current.delete(mappedPaperId)
+            }
+          }
+        }
+        // Dispose texture (only if it's not being reused)
+        if (paperExists.texture) {
+          paperExists.texture.dispose()
+        }
+        placedPapersRef.current = filtered
+        // Clear pending deletion since we've processed it
+        pendingDeletionsRef.current.delete(paperId)
+        return filtered
+      })
+    },
+    [
+      deletionInProgressRef,
+      pendingDeletionsRef,
+      placedPapersRef,
+      optimisticPapersByIdRef,
+      userId,
+      showToast,
+      optimisticallyDeletedPapersRef,
+      setPlacedPapers,
+      setLastImageVector,
+      optimisticPapersRef,
+    ]
+  )
+
+  const onUserJoined = useCallback(
+    (otherUserId: string, otherUsername?: string | null) => {
+      // Only show toast for users who join AFTER we've connected
+      // (ignore initial user_joined messages for users already in the orb)
+      // Also ignore our own user_joined message (already filtered in useOrbWebSocket)
+      if (otherUserId !== userId && initialConnectionCompleteRef.current) {
+        // Display username if available, otherwise show "Anonymous User"
+        const isAnonymous = otherUserId.startsWith('user:anonymous:')
+        const displayName =
+          otherUsername ||
+          (isAnonymous ? 'Anonymous User' : otherUserId.length > 8 ? `...${otherUserId.slice(-8)}` : otherUserId)
+        showToast(
+          <>
+            <strong>{displayName}</strong> joined
+          </>,
+          'info',
+          8000 // Show for 8 seconds
+        )
+      }
+    },
+    [userId, initialConnectionCompleteRef, showToast]
+  )
+
+  const onUserLeft = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (_otherUserId: string, _otherUsername?: string | null) => {
+      // User left (no special handling needed in OrbScene, but keep signature for consistency)
+    },
+    []
+  )
+
+  const onError = useCallback(
+    (error: string) => {
+      logger.error('WebSocket error', error)
+
+      // Check if this is a deletion error
+      // Only rollback if the error indicates the deletion should be retried (network error, server error)
+      // Don't rollback if the paper truly doesn't exist (404) - that means it was already deleted or never existed
+      const paperNotFoundMatch = error.match(/Paper\s+([^\s]+)\s+not found/i)
+      const authorizationFailedMatch = error.match(/Authorization failed/i)
+
+      if (paperNotFoundMatch) {
+        // Paper not found - this means the paper was already deleted or never existed
+        const paperId = paperNotFoundMatch[1]
+
+        // Check if we optimistically deleted this paper (still tracking it)
+        const optimisticallyDeletedPaper = optimisticallyDeletedPapersRef.current.get(paperId)
+        if (optimisticallyDeletedPaper) {
+          // Paper was optimistically deleted but server says it doesn't exist
+          // This could mean:
+          // 1. The paper was already deleted by another user (legitimate - don't rollback)
+          // 2. The paper never existed on the server (shouldn't happen, but don't rollback)
+          // 3. The paper ID is wrong (bug - don't rollback)
+          // In all cases, we should NOT rollback - the paper is already gone
+          deletionInProgressRef.current.delete(paperId)
+          // Clean up optimistic deletion tracking
+          optimisticallyDeletedPapersRef.current.delete(paperId)
+          // Dispose texture
+          optimisticallyDeletedPaper.texture?.dispose()
+          return
+        }
+
+        // Paper not found but we're not tracking it optimistically
+        // This could mean:
+        // 1. The paper was successfully deleted and `onPaperDeleted` already cleaned up tracking
+        // 2. The paper was never optimistically deleted (deleted by another user)
+        // 3. This is a late/stale error from a duplicate request or server race condition
+        // Check if the paper still exists in state to determine which case it is
+        setPlacedPapers((prev) => {
+          const paperStillExists = prev.find((p) => p.id === paperId)
+          if (!paperStillExists) {
+            // Paper doesn't exist in state - it was successfully deleted
+            // This is likely a late/stale error from a duplicate request or server race condition
+            // Since the paper is already gone from state, the deletion was successful
+            deletionInProgressRef.current.delete(paperId)
+            return prev // Return unchanged - no re-render needed
+          } else {
+            // Paper still exists in state but server says it doesn't exist
+            // This could mean:
+            // 1. The paper was deleted by another user (legitimate - remove it from state)
+            // 2. There's a desync between client and server (unexpected)
+            // Remove it from state to keep client in sync with server
+            const filtered = prev.filter((p) => p.id !== paperId)
+            setLastImageVector(getLatestPaperVector(filtered))
+            // Clean up deletion in progress tracking
+            deletionInProgressRef.current.delete(paperId)
+            // Clean up optimistic tracking if it exists
+            for (const [sourceUrl, optId] of optimisticPapersRef.current.entries()) {
+              if (optId === paperId) {
+                optimisticPapersRef.current.delete(sourceUrl)
+                break
+              }
+            }
+            // Dispose texture
+            const removedPaper = prev.find((p) => p.id === paperId)
+            removedPaper?.texture?.dispose()
+            return filtered
+          }
+        })
+      } else if (authorizationFailedMatch) {
+        // Authorization failed - this might be retryable, but it's safer to not rollback
+        // as it might indicate a real authorization issue
+        logger.warn('Authorization failed - not rolling back deletion (may be legitimate)')
+      }
+    },
+    [
+      optimisticallyDeletedPapersRef,
+      deletionInProgressRef,
+      optimisticPapersRef,
+      setPlacedPapers,
+      setLastImageVector,
+    ]
+  )
+
+  const onViewCenterUpdate = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    (_userId: string, _viewCenter: ViewCenter) => {
+      // View center updates not used in OrbScene (presence tracking handled elsewhere)
+    },
+    []
+  )
+
+  return {
     onState,
     onPaperCreated,
     onPaperDeleted,
@@ -67,497 +625,5 @@ export function useOrbWebSocket({
     onUserLeft,
     onViewCenterUpdate,
     onError,
-  })
-  
-  // Update callbacks ref when they change
-  useEffect(() => {
-    callbacksRef.current = {
-      onState,
-      onPaperCreated,
-      onPaperDeleted,
-      onUserJoined,
-      onUserLeft,
-      onViewCenterUpdate,
-      onError,
-    }
-  }, [onState, onPaperCreated, onPaperDeleted, onUserJoined, onUserLeft, onViewCenterUpdate, onError])
-
-  const wsUrl = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://')
-  const maxReconnectAttempts = 5
-  const reconnectDelay = 1000 // Start with 1 second
-
-  const generateRequestId = useCallback(() => {
-    return `req_${Date.now()}_${++requestIdCounterRef.current}`
-  }, [])
-
-  const sendMessage = useCallback(
-    async (message: QueuedMessage, waitForResponse = false): Promise<unknown> => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        // Queue message if not connected
-        if (waitForResponse) {
-          return Promise.reject(new Error('WebSocket not connected'))
-        }
-        messageQueueRef.current.push(message)
-        return
-      }
-
-      const requestId = generateRequestId()
-      const messageWithId = { ...message, request_id: requestId }
-
-      if (waitForResponse) {
-        return new Promise((resolve, reject) => {
-          pendingRequestsRef.current.set(requestId, { resolve, reject })
-          wsRef.current!.send(JSON.stringify(messageWithId))
-          
-          // Timeout after 10 seconds
-          setTimeout(() => {
-            if (pendingRequestsRef.current.has(requestId)) {
-              pendingRequestsRef.current.delete(requestId)
-              reject(new Error('Request timeout'))
-            }
-          }, 10000)
-        })
-      } else {
-        wsRef.current.send(JSON.stringify(messageWithId))
-      }
-    },
-    [generateRequestId]
-  )
-
-  const connect = useCallback(async () => {
-    if (!enabled || !orbId) return
-
-    // Check if already connected or connecting
-    if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
-      logger.debug('Already connected or connecting, skipping')
-      return // Already connected or connecting
-    }
-
-    // Clear any pending reconnection attempts
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-      reconnectTimeoutRef.current = null
-    }
-
-    setStatus('connecting')
-    logger.debug(`Attempting to connect to orb: ${orbId}`)
-
-    try {
-      // Get JWT token if user is authenticated (optional for viewing)
-      const token = await getToken()
-
-      // Connect to WebSocket
-      // Pass token and username as query parameters (frontend has direct access via useUser())
-      // This is more reliable than extracting from JWT token, which may not include username
-      let url = `${wsUrl}/ws/orb/${orbId}`
-      if (token) {
-        url += `?token=${encodeURIComponent(token)}`
-        if (username) {
-          url += `&username=${encodeURIComponent(username)}`
-        }
-      }
-      const ws = new WebSocket(url)
-
-      // Set up onmessage handler FIRST, before onopen, so we can receive messages
-      // that the server sends immediately after accepting the connection
-      ws.onmessage = (event) => {
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data)
-          
-          // Log all incoming paper_created messages for debugging
-          if (message.type === 'paper_created' || (message.type === 'success' && message.data && typeof message.data === 'object' && 'type' in message.data && message.data.type === 'paper_created')) {
-            const paperId = message.type === 'paper_created' ? message.paper.id : (message.data as any).paper.id
-            logger.debug(`[WebSocket] Received message with type="${message.type}" for paper: ${paperId}`)
-          }
-
-          // Handle ping/pong
-          if (message.type === 'ping') {
-            ws.send(JSON.stringify({ type: 'pong' }))
-            return
-          }
-
-          // Handle responses to pending requests (resolve promise, but continue processing for callbacks)
-          if (message.request_id && pendingRequestsRef.current.has(message.request_id)) {
-            const { resolve, reject } = pendingRequestsRef.current.get(message.request_id)!
-            pendingRequestsRef.current.delete(message.request_id)
-
-            if (message.type === 'error') {
-              reject(new Error(message.error))
-              return // Error messages don't need callback processing
-            } else {
-              // Resolve with the data (for SuccessMessage, this is the wrapped message)
-              resolve(message.type === 'success' ? message.data : message)
-            }
-          }
-
-          // Handle broadcast messages and responses (for callback processing)
-          // Use callbacks from ref to get latest version without causing reconnections
-          const callbacks = callbacksRef.current
-          switch (message.type) {
-            case 'state':
-              callbacks.onState?.(message.papers || [])
-              break
-
-            case 'success': {
-              // Success messages can contain wrapped events (paper_created, paper_deleted, etc.)
-              // This happens both for responses to requests (with request_id) and broadcasts
-              const wrappedData = message.data
-              if (wrappedData && typeof wrappedData === 'object' && 'type' in wrappedData) {
-                if (wrappedData.type === 'paper_created' && 'paper' in wrappedData) {
-                  logger.debug(`Received paper_created message (wrapped in success) for paper: ${(wrappedData.paper as ServerPaper).id}`)
-                  callbacks.onPaperCreated?.(wrappedData.paper as ServerPaper)
-                } else if (wrappedData.type === 'paper_deleted' && 'paper_id' in wrappedData) {
-                  const reason = (wrappedData as any).reason as string | undefined
-                  logger.info(`[WebSocket] Received paper_deleted message (wrapped) for paper: ${wrappedData.paper_id}, reason: ${reason}`)
-                  callbacks.onPaperDeleted?.(wrappedData.paper_id as string, reason)
-                } else if (wrappedData.type === 'user_joined' && 'user_id' in wrappedData) {
-                  const userId = wrappedData.user_id as string
-                  const username = (wrappedData as any).username as string | null | undefined
-                  const isAnonymous = userId.startsWith('user:anonymous:')
-                  
-                  // Track our own user_id when we receive our own user_joined message
-                  if (!currentUserIdRef.current) {
-                    currentUserIdRef.current = userId
-                  }
-                  
-                  setConnectedUsers((prev) => {
-                    const next = new Set(prev)
-                    next.add(userId)
-                    return next
-                  })
-                  if (isAnonymous) {
-                    setAnonymousUsers((prev) => {
-                      const next = new Set(prev)
-                      next.add(userId)
-                      return next
-                    })
-                  }
-                  // Only call onUserJoined callback for OTHER users (not ourselves)
-                  if (currentUserIdRef.current && userId === currentUserIdRef.current) {
-                    // This is our own join - don't show toast
-                  } else {
-                    callbacks.onUserJoined?.(userId, username)
-                  }
-                } else if (wrappedData.type === 'user_left' && 'user_id' in wrappedData) {
-                  const userId = wrappedData.user_id as string
-                  const username = (wrappedData as any).username as string | null | undefined
-                  const isAnonymous = userId.startsWith('user:anonymous:')
-                  setConnectedUsers((prev) => {
-                    const next = new Set(prev)
-                    next.delete(userId)
-                    return next
-                  })
-                  if (isAnonymous) {
-                    setAnonymousUsers((prev) => {
-                      const next = new Set(prev)
-                      next.delete(userId)
-                      return next
-                    })
-                  }
-                  callbacks.onUserLeft?.(userId, username)
-                } else if (wrappedData.type === 'view_center_update' && 'user_id' in wrappedData && 'view_center' in wrappedData) {
-                  callbacks.onViewCenterUpdate?.(wrappedData.user_id as string, wrappedData.view_center as ViewCenter)
-                } else if (wrappedData.type === 'orb_created') {
-                  // Orb created event (not used in OrbScene, but handled for completeness)
-                  logger.debug('Orb created event received')
-                } else if (wrappedData.type === 'orb_deleted') {
-                  // Orb deleted event (not used in OrbScene, but handled for completeness)
-                  logger.debug('Orb deleted event received')
-                }
-              }
-              break
-            }
-
-            case 'paper_created':
-              // Direct paper_created message (if not wrapped)
-              logger.debug(`Received paper_created message (direct) for paper: ${message.paper.id}`)
-              callbacks.onPaperCreated?.(message.paper)
-              break
-
-            case 'paper_deleted':
-              // Direct paper_deleted message (if not wrapped)
-              const reason = (message as any).reason as string | undefined
-              logger.info(`[WebSocket] Received paper_deleted message (direct) for paper: ${message.paper_id}, reason: ${reason}`)
-              callbacks.onPaperDeleted?.(message.paper_id, reason)
-              break
-
-            case 'user_joined':
-              const isJoinedAnonymous = message.user_id.startsWith('user:anonymous:')
-              
-              // Track our own user_id when we receive our own user_joined message
-              // The backend sends us our own user_joined message first so we can add ourselves
-              if (!currentUserIdRef.current) {
-                currentUserIdRef.current = message.user_id
-              }
-              
-              setConnectedUsers((prev) => {
-                const next = new Set(prev)
-                next.add(message.user_id)
-                return next
-              })
-              if (isJoinedAnonymous) {
-                setAnonymousUsers((prev) => {
-                  const next = new Set(prev)
-                  next.add(message.user_id)
-                  return next
-                })
-              }
-              // Only call onUserJoined callback for OTHER users (not ourselves)
-              // We know it's ourselves if currentUserIdRef matches
-              if (currentUserIdRef.current && message.user_id === currentUserIdRef.current) {
-                // This is our own join - don't show toast
-              } else {
-                callbacks.onUserJoined?.(message.user_id, message.username)
-              }
-              break
-
-            case 'user_left':
-              logger.debug(`User left: ${message.user_id} (username: ${message.username || 'unknown'})`)
-              const isLeftAnonymous = message.user_id.startsWith('user:anonymous:')
-              setConnectedUsers((prev) => {
-                const next = new Set(prev)
-                next.delete(message.user_id)
-                return next
-              })
-              if (isLeftAnonymous) {
-                setAnonymousUsers((prev) => {
-                  const next = new Set(prev)
-                  next.delete(message.user_id)
-                  return next
-                })
-              }
-              callbacks.onUserLeft?.(message.user_id, message.username)
-              break
-
-            case 'view_center_update':
-              callbacks.onViewCenterUpdate?.(message.user_id, message.view_center)
-              break
-
-            case 'error':
-              callbacks.onError?.(message.error)
-              break
-
-            default:
-              logger.warn(`Unknown message type: ${(message as { type: string }).type}`)
-          }
-        } catch (error) {
-          logger.error('Error parsing message', error)
-        }
-      }
-
-      ws.onopen = () => {
-        logger.info(`Connected to orb: ${orbId}`)
-        setStatus('connected')
-        reconnectAttemptsRef.current = 0
-        wasHiddenRef.current = false
-        
-        // The backend will send us our own user_joined message so we can add ourselves
-        // to connectedUsers. We'll handle it in the onmessage handler.
-        
-        // Send queued messages
-        while (messageQueueRef.current.length > 0) {
-          const message = messageQueueRef.current.shift()
-          if (message && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(message))
-          }
-        }
-
-        // Request initial state
-        ws.send(JSON.stringify({
-          type: 'get_state',
-          orb_id: orbId,
-        }))
-      }
-
-      ws.onerror = (error) => {
-        logger.error('WebSocket error', error)
-        setStatus('error')
-        callbacksRef.current.onError?.('WebSocket error')
-      }
-
-      ws.onclose = (event) => {
-        logger.debug(`WebSocket closed: code=${event.code}, reason=${event.reason || 'none'}`)
-        
-        // Only update state if this is the current connection
-        if (wsRef.current === ws) {
-          setStatus('disconnected')
-          wsRef.current = null
-        }
-
-        // Clear pending requests
-        pendingRequestsRef.current.forEach(({ reject }) => {
-          reject(new Error('WebSocket closed'))
-        })
-        pendingRequestsRef.current.clear()
-
-        // Don't reconnect if disabled or if this is not the current connection
-        if (!enabled || wsRef.current !== null) {
-          return
-        }
-
-        // Attempt reconnect if not a normal closure and not disabled
-        if (event.code !== 1000 && event.code !== 1001 && reconnectAttemptsRef.current < maxReconnectAttempts && enabled) {
-          const delay = reconnectDelay * Math.pow(2, reconnectAttemptsRef.current)
-          reconnectAttemptsRef.current++
-          logger.debug(`Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`)
-          
-          reconnectTimeoutRef.current = window.setTimeout(() => {
-            // Check if still enabled before reconnecting
-            // Allow both signed-in and anonymous users to reconnect
-            if (enabled && orbId) {
-              connect()
-            }
-          }, delay)
-        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-          setStatus('error')
-          callbacksRef.current.onError?.('Failed to reconnect after multiple attempts')
-        }
-      }
-
-      wsRef.current = ws
-    } catch (error) {
-      logger.error('Connection error', error)
-      setStatus('error')
-      callbacksRef.current.onError?.(error instanceof Error ? error.message : 'Connection error')
-    }
-  }, [orbId, enabled, getToken, wsUrl, username])
-
-  const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-      reconnectTimeoutRef.current = null
-    }
-    if (wsRef.current) {
-      wsRef.current.close(1000, 'Client disconnect')
-      wsRef.current = null
-    }
-    setStatus('disconnected')
-    setConnectedUsers(new Set())
-    messageQueueRef.current = []
-    pendingRequestsRef.current.clear()
-  }, [])
-
-  // Reconnect on window/tab focus or visibility change (only if actually disconnected)
-  useEffect(() => {
-    if (!enabled || !orbId) {
-      return
-    }
-
-    let reconnectTimeoutId: number | null = null
-
-    const checkAndReconnectIfNeeded = () => {
-      // Allow both signed-in and anonymous users to reconnect
-      if (!enabled || !orbId) {
-        return
-      }
-      
-      // Clear any pending reconnect timeout
-      if (reconnectTimeoutId !== null) {
-        clearTimeout(reconnectTimeoutId)
-      }
-      
-      // Wait a bit before checking (give browser time to resume and check actual connection state)
-      reconnectTimeoutId = window.setTimeout(() => {
-        reconnectTimeoutId = null
-        // Check WebSocket state directly (don't rely on React state which might be stale)
-        const ws = wsRef.current
-        const wsState = ws?.readyState
-        
-        // Only reconnect if WebSocket is actually CLOSED (not connected, connecting, or closing)
-        // This prevents unnecessary reconnections that would wipe out optimistic updates
-        if (!ws || wsState === WebSocket.CLOSED) {
-          logger.debug('Window/tab became visible/focused and WebSocket is disconnected, reconnecting')
-          reconnectAttemptsRef.current = 0
-          connect()
-        } else {
-          const stateName = wsState === WebSocket.CONNECTING ? 'connecting' :
-            wsState === WebSocket.OPEN ? 'connected' :
-            wsState === WebSocket.CLOSING ? 'closing' : 'unknown'
-          logger.debug(`Window/tab became visible/focused, WebSocket is already ${stateName}`)
-        }
-      }, 2000) // Wait 2 seconds - only reconnect if truly disconnected for a while
-    }
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // Tab/window became visible - check if we need to reconnect
-        if (wasHiddenRef.current) {
-          wasHiddenRef.current = false
-          checkAndReconnectIfNeeded()
-        }
-      } else {
-        // Tab/window became hidden - clear any pending reconnect
-        wasHiddenRef.current = true
-        if (reconnectTimeoutId !== null) {
-          clearTimeout(reconnectTimeoutId)
-          reconnectTimeoutId = null
-        }
-      }
-    }
-
-    const handleFocus = () => {
-      // Window gained focus - check if we need to reconnect
-      // Only check if tab is visible (focus can fire even when tab is hidden)
-      if (document.visibilityState === 'visible') {
-        checkAndReconnectIfNeeded()
-      }
-    }
-
-    // Listen for visibility changes (most reliable for tab switching)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    // Also listen for window focus (useful for window switching)
-    window.addEventListener('focus', handleFocus)
-
-    return () => {
-      if (reconnectTimeoutId !== null) {
-        clearTimeout(reconnectTimeoutId)
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('focus', handleFocus)
-    }
-  }, [enabled, orbId, connect]) // Removed isSignedIn - allow anonymous users to reconnect
-
-  // Connect on mount and when orbId changes
-  useEffect(() => {
-    if (!enabled || !orbId) {
-      disconnect()
-      return
-    }
-
-    // Disconnect any existing connection first
-    disconnect()
-
-    // Small delay to avoid race conditions and allow cleanup to complete
-    const timeoutId = setTimeout(() => {
-      // Check again if still enabled (might have changed during delay)
-      // Allow both signed-in and anonymous users to connect
-      if (enabled && orbId) {
-        connect()
-      }
-    }, 200)
-
-    return () => {
-      clearTimeout(timeoutId)
-      disconnect()
-      // Reset reconnect attempts when orbId or username changes
-      reconnectAttemptsRef.current = 0
-      // Clear current user ID when disconnecting
-      currentUserIdRef.current = null
-      // Clear user sets when disconnecting
-      setConnectedUsers(new Set())
-      setAnonymousUsers(new Set())
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orbId, enabled, username]) // connect and disconnect are stable (memoized), so we don't need them in deps
-
-  return {
-    status,
-    connectedUsersCount: connectedUsers.size,
-    anonymousUsersCount: anonymousUsers.size,
-    connectedUsers: Array.from(connectedUsers),
-    sendMessage,
-    connect,
-    disconnect,
   }
 }
-

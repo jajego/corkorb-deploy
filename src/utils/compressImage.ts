@@ -27,7 +27,6 @@ const MAX_DIMENSION = 2048
 // For large files (>1MB), we'll reduce quality more aggressively
 const JPEG_QUALITY = 0.80 // 80% quality (good balance between size and quality)
 const WEBP_QUALITY = 0.80 // 80% quality (WebP compresses better at same quality)
-const PNG_QUALITY = 0.9 // 90% quality (PNG compression is less aggressive)
 
 // Quality for large files (aggressive compression to ensure <2.5MB)
 const JPEG_QUALITY_LARGE = 0.70 // 70% quality for large files

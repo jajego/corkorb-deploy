@@ -30,10 +30,6 @@ export function CanvasCapture({
       const screenCenter = new THREE.Vector3()
       screenCenter.copy(orbCenter).project(camera)
       
-      // Calculate screen coordinates (NDC to pixel coordinates)
-      const pixelX = ((screenCenter.x + 1) / 2) * size.width
-      const pixelY = ((1 - screenCenter.y) / 2) * size.height
-      
       // Sample more points on the sphere to get a better bounding box
       // This ensures we capture the full sphere even when rotated
       const corners: THREE.Vector3[] = []
