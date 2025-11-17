@@ -1,13 +1,11 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import { useDrag, usePinch } from '@use-gesture/react'
 
 import { ORB_EVENT } from '../../../three/constants/events'
-import { useTouchDetection } from '../hooks/useTouchDetection'
+import { usePinchGesture } from '../hooks/usePinchGesture'
 
 const ROTATE_SENSITIVITY = 0.004
-const TOUCH_ROTATE_SENSITIVITY = 0.001 // Much lower sensitivity for touch devices
 const DAMPING = 0.92
 const EPS = 0.001
 const MIN_PHI = EPS
@@ -39,6 +37,8 @@ type CameraControllerProps = {
   onSphericalChange?: (spherical: THREE.Spherical) => void
 }
 
+type PointerPosition = { x: number; y: number }
+
 export function CameraController({
   draggingOrb,
   setDraggingOrb,
@@ -49,19 +49,11 @@ export function CameraController({
   onSphericalChange,
 }: CameraControllerProps) {
   const { camera, gl } = useThree()
-  const isTouchDevice = useTouchDetection()
 
   const spherical = useRef(new THREE.Spherical(3.5, Math.PI / 2, 0))
+  const lastPointer = useRef<PointerPosition | null>(null)
   const velocity = useRef({ theta: 0, phi: 0 })
   const overrideRef = useRef<THREE.Spherical | null>(null)
-  const initialPinchRadiusRef = useRef<number | null>(null)
-  const lastPointer = useRef<{ x: number; y: number } | null>(null)
-  const draggingOrbRef = useRef(draggingOrb)
-  
-  // Keep ref in sync with prop
-  useEffect(() => {
-    draggingOrbRef.current = draggingOrb
-  }, [draggingOrb])
 
   useEffect(() => {
     const s = spherical.current
@@ -85,101 +77,64 @@ export function CameraController({
     }
   }, [overrideTarget])
 
-  // Use @use-gesture/react for touch devices only
-  // Desktop uses the original pointer event system below
-  useDrag(
-    ({ movement: [mx, my], dragging, first, last }) => {
-      if (!controlsEnabled || !isTouchDevice) return
-      
-      if (first) {
-        setDraggingOrb(true)
-        velocity.current.theta = 0
-        velocity.current.phi = 0
-      }
-      
-      if (dragging) {
+  // Pinch-to-zoom gesture for touch devices
+  usePinchGesture(
+    gl.domElement,
+    {
+      onPinchStart: () => {
+        // Pinch started - we could disable rotation during pinch if needed
+      },
+      onPinchMove: (scale) => {
+        if (!controlsEnabled) return
         const s = spherical.current
-        // Use much lower sensitivity for touch devices
-        s.theta -= mx * TOUCH_ROTATE_SENSITIVITY
-        s.phi -= my * TOUCH_ROTATE_SENSITIVITY
-        s.phi = THREE.MathUtils.clamp(s.phi, MIN_PHI, MAX_PHI)
         
-        velocity.current.theta = -mx * TOUCH_ROTATE_SENSITIVITY
-        velocity.current.phi = -my * TOUCH_ROTATE_SENSITIVITY
-      }
-      
-      if (last) {
-        setDraggingOrb(false)
-      }
-    },
-    {
-      target: gl.domElement,
-      enabled: isTouchDevice && controlsEnabled,
-      pointer: { buttons: [0, 1, 2, 3, 4] },
-      preventDefault: false, // Don't prevent default to avoid passive listener errors
-      filterTaps: true,
-      threshold: 5, // Require 5px movement before considering it a drag
-    }
-  )
-
-  // Use @use-gesture/react for pinch (zoom) - touch only
-  usePinch(
-    ({ offset: [scale], first, last }) => {
-      if (!controlsEnabled || !isTouchDevice) return
-      
-      if (first) {
-        // Store initial radius when pinch starts
-        initialPinchRadiusRef.current = spherical.current.radius
-        // Clear velocity when pinch starts to prevent rotation during pinch
-        velocity.current.theta = 0
-        velocity.current.phi = 0
-      }
-      
-      if (initialPinchRadiusRef.current !== null) {
-        const s = spherical.current
-        // offset[0] is the accumulated scale from the start of the pinch
-        // Invert so pinch out = zoom in (like mouse wheel)
+        // Apply pinch scale to zoom (radius)
+        // Invert scale so pinch out = zoom in (like mouse wheel)
         const zoomFactor = 1 / scale
-        s.radius = THREE.MathUtils.clamp(
-          initialPinchRadiusRef.current * zoomFactor,
-          MIN_RADIUS,
-          MAX_RADIUS
-        )
-      }
-      
-      if (last) {
-        // Clear initial radius when pinch ends
-        initialPinchRadiusRef.current = null
-        velocity.current.theta = 0
-        velocity.current.phi = 0
-      }
+        s.radius = THREE.MathUtils.clamp(s.radius * zoomFactor, MIN_RADIUS, MAX_RADIUS)
+      },
+      onPinchEnd: () => {
+        // Pinch ended
+      },
     },
-    {
-      target: gl.domElement,
-      enabled: isTouchDevice && controlsEnabled,
-      preventDefault: false, // Don't prevent default to avoid passive listener errors
-    }
+    controlsEnabled
   )
 
-  // Desktop pointer event handlers (original implementation)
+  // Track single-finger touch drag for better touch device support
+  const touchDragActiveRef = useRef(false)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  // Use a ref to track dragging state so we don't need to recreate event listeners
+  const draggingOrbRef = useRef(draggingOrb)
+  
+  // Keep ref in sync with prop
   useEffect(() => {
-    if (!controlsEnabled || isTouchDevice) return undefined
-    
+    draggingOrbRef.current = draggingOrb
+  }, [draggingOrb])
+
+  useEffect(() => {
     const dom = gl.domElement
 
     const handleStartDrag = (event: Event) => {
-      const detail = (event as CustomEvent<{ x: number; y: number }>).detail
+      if (!controlsEnabled) return
+      const detail = (event as CustomEvent<PointerPosition>).detail
       lastPointer.current = detail
+      // Mark that pointer events are handling the drag (prevents touch handlers from double-processing)
+      touchDragActiveRef.current = false
     }
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (!draggingOrbRef.current || !lastPointer.current) return
+      if (!controlsEnabled || !draggingOrbRef.current || !lastPointer.current) return
       
+      // Allow touch events for single-finger rotation (pointer events work for touch too)
+      // Two-finger gestures (pinch/twist) are handled separately by touch event handlers
+      // and won't trigger pointer events in the same way
+
       const dx = event.clientX - lastPointer.current.x
       const dy = event.clientY - lastPointer.current.y
       lastPointer.current = { x: event.clientX, y: event.clientY }
 
       const s = spherical.current
+
       s.theta -= dx * ROTATE_SENSITIVITY
       s.phi -= dy * ROTATE_SENSITIVITY
       s.phi = THREE.MathUtils.clamp(s.phi, MIN_PHI, MAX_PHI)
@@ -189,67 +144,164 @@ export function CameraController({
     }
 
     const handlePointerUp = () => {
-      if (!draggingOrbRef.current) return
+      if (!controlsEnabled || !draggingOrbRef.current) return
       setDraggingOrb(false)
       lastPointer.current = null
+      touchDragActiveRef.current = false
+      touchStartRef.current = null
     }
 
     const handlePointerCancel = () => {
-      if (!draggingOrbRef.current) return
+      // Handle touch cancellation (e.g., when scrolling starts)
+      if (!controlsEnabled || !draggingOrbRef.current) return
       setDraggingOrb(false)
       lastPointer.current = null
+      touchDragActiveRef.current = false
+      touchStartRef.current = null
+    }
+
+    // Handle single-finger touch drag (fallback for devices where pointer events don't work well)
+    // IMPORTANT: TouchEvent handlers ONLY fire for actual touch input, NEVER for mouse clicks.
+    // Mouse interactions trigger MouseEvent/PointerEvent, which are completely separate.
+    // This means these handlers are completely isolated from desktop mouse logic.
+    const handleTouchStart = (event: TouchEvent) => {
+      if (!controlsEnabled) return
+      // Only handle single-finger touches - two-finger gestures are handled by usePinchGesture
+      if (event.touches.length !== 1) return
+      
+      // Check if pointer events are already handling this (normal case on real touch devices)
+      // If draggingOrb is true but touchDragActiveRef is false, pointer events are handling it
+      // In that case, we don't want to interfere - pointer events will update the camera
+      if (draggingOrbRef.current && !touchDragActiveRef.current) {
+        // Pointer events are handling it - don't interfere, just return
+        return
+      }
+      
+      // Fallback: Start dragging from touch event if pointer events didn't fire
+      // This primarily helps with Chrome DevTools touch emulation where pointer events
+      // might not fire reliably. On real touch devices, pointer events usually fire first.
+      const touch = event.touches[0]
+      touchDragActiveRef.current = true
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY }
+      lastPointer.current = { x: touch.clientX, y: touch.clientY }
+      
+      // Start dragging - works as fallback when pointer events don't fire
+      setDraggingOrb(true)
+    }
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!controlsEnabled) return
+      // Only handle single-finger touches - two-finger gestures are handled by usePinchGesture
+      if (event.touches.length !== 1) {
+        // If we were dragging with one finger but now have two fingers, stop dragging
+        if (touchDragActiveRef.current && event.touches.length === 2) {
+          touchDragActiveRef.current = false
+          touchStartRef.current = null
+          if (draggingOrbRef.current) {
+            setDraggingOrb(false)
+          }
+        }
+        return
+      }
+      
+      // Only process if we're actively dragging (either from touch or pointer events)
+      // This prevents conflicts - if pointer events are handling it, we don't double-process
+      // The touchDragActiveRef tracks if touch initiated the drag, but we check draggingOrbRef
+      // to ensure we only process when drag is actually active
+      if (!draggingOrbRef.current || !lastPointer.current) return
+      
+      // If pointer events are handling this (normal case), they'll update the camera.
+      // Touch handler only needs to update if pointer events aren't working.
+      // Check if this is a touch-initiated drag (not pointer-initiated)
+      if (!touchDragActiveRef.current) {
+        // Pointer events are handling it - just update touch tracking ref but don't process
+        return
+      }
+      
+      const touch = event.touches[0]
+      const dx = touch.clientX - lastPointer.current.x
+      const dy = touch.clientY - lastPointer.current.y
+      lastPointer.current = { x: touch.clientX, y: touch.clientY }
+
+      const s = spherical.current
+
+      s.theta -= dx * ROTATE_SENSITIVITY
+      s.phi -= dy * ROTATE_SENSITIVITY
+      s.phi = THREE.MathUtils.clamp(s.phi, MIN_PHI, MAX_PHI)
+
+      velocity.current.theta = -dx * ROTATE_SENSITIVITY
+      velocity.current.phi = -dy * ROTATE_SENSITIVITY
+      
+      // Prevent scrolling while dragging (only affects touch, not mouse)
+      event.preventDefault()
+    }
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (!controlsEnabled) return
+      // Only end drag if all touches are gone or we have 2 touches (pinch gesture)
+      if (event.touches.length === 0) {
+        touchDragActiveRef.current = false
+        touchStartRef.current = null
+        if (draggingOrbRef.current) {
+          setDraggingOrb(false)
+        }
+        lastPointer.current = null
+      } else if (event.touches.length === 2) {
+        // Two-finger gesture started - stop single-finger drag
+        touchDragActiveRef.current = false
+        touchStartRef.current = null
+        if (draggingOrbRef.current) {
+          setDraggingOrb(false)
+        }
+      }
+    }
+
+    const handleTouchCancel = () => {
+      if (!controlsEnabled) return
+      touchDragActiveRef.current = false
+      touchStartRef.current = null
+      if (draggingOrbRef.current) {
+        setDraggingOrb(false)
+      }
+      lastPointer.current = null
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      if (!controlsEnabled) return
+      const s = spherical.current
+
+      const direction = event.deltaY > 0 ? 1 : -1
+      const factor = 1 + direction * ZOOM_FACTOR
+
+      s.radius = THREE.MathUtils.clamp(s.radius * factor, MIN_RADIUS, MAX_RADIUS)
     }
 
     window.addEventListener(ORB_EVENT.startDrag, handleStartDrag)
     dom.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
     window.addEventListener('pointercancel', handlePointerCancel)
+    // Add touch event handlers for single-finger drag (fallback for better touch support)
+    // Use capture phase to run after usePinchGesture (which also uses capture)
+    // But only handle single-finger touches, which usePinchGesture ignores
+    dom.addEventListener('touchstart', handleTouchStart, { passive: false, capture: false })
+    dom.addEventListener('touchmove', handleTouchMove, { passive: false, capture: false })
+    dom.addEventListener('touchend', handleTouchEnd, { passive: false, capture: false })
+    dom.addEventListener('touchcancel', handleTouchCancel, { passive: false, capture: false })
+    dom.addEventListener('wheel', handleWheel, { passive: false })
 
     return () => {
       window.removeEventListener(ORB_EVENT.startDrag, handleStartDrag)
       dom.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerCancel)
-    }
-  }, [gl, controlsEnabled, isTouchDevice, setDraggingOrb])
-
-  // Handle mouse wheel zoom (desktop)
-  useEffect(() => {
-    if (!controlsEnabled) return undefined
-    
-    const handleWheel = (event: WheelEvent) => {
-      event.preventDefault()
-      const s = spherical.current
-      const direction = event.deltaY > 0 ? 1 : -1
-      const factor = 1 + direction * ZOOM_FACTOR
-      s.radius = THREE.MathUtils.clamp(s.radius * factor, MIN_RADIUS, MAX_RADIUS)
-    }
-
-    const dom = gl.domElement
-    dom.addEventListener('wheel', handleWheel, { passive: false })
-    
-    return () => {
+      dom.removeEventListener('touchstart', handleTouchStart)
+      dom.removeEventListener('touchmove', handleTouchMove)
+      dom.removeEventListener('touchend', handleTouchEnd)
+      dom.removeEventListener('touchcancel', handleTouchCancel)
       dom.removeEventListener('wheel', handleWheel)
     }
-  }, [gl, controlsEnabled])
-
-  // Handle custom startDrag event (for compatibility with existing code)
-  // Only needed for desktop (touch devices use useDrag above)
-  useEffect(() => {
-    if (!controlsEnabled || isTouchDevice) return undefined
-    
-    const handleStartDrag = () => {
-      setDraggingOrb(true)
-      velocity.current.theta = 0
-      velocity.current.phi = 0
-    }
-
-    window.addEventListener(ORB_EVENT.startDrag, handleStartDrag)
-    
-    return () => {
-      window.removeEventListener(ORB_EVENT.startDrag, handleStartDrag)
-    }
-  }, [controlsEnabled, isTouchDevice, setDraggingOrb])
+  }, [gl, setDraggingOrb, controlsEnabled])
 
   useFrame((_, delta) => {
     const s = spherical.current

@@ -12,9 +12,7 @@ import { GhostPaper, type GhostPaperTransform } from './components/GhostPaper'
 import { PinnedPaper } from './components/PinnedPaper'
 import { OrbDebugHud } from './components/OrbDebugHud'
 import { TouchGestureHandler } from './components/TouchGestureHandler'
-import { MobileGhostPaperGestures } from './components/MobileGhostPaperGestures'
 import { CanvasCapture } from './components/CanvasCapture'
-import { useTouchDetection } from './hooks/useTouchDetection'
 import { dispatchOrbEvent, ORB_EVENT } from '../../three/constants/events'
 import { ORB_MODE, useOrbStateMachine } from './state'
 import { PAPER_OFFSET, PAPER_SPHERE_RADIUS, PAPER_ROTATION_STEP } from './components/papers/constants'
@@ -86,7 +84,6 @@ export function OrbScene({ orbId }: OrbSceneProps) {
   const ghostGeometryRef = useRef<{ positions: Float32Array; normals: Float32Array } | null>(null)
   const pointerOverrideRef = useRef<{ x: number; y: number } | null>(null)
   const [showAboutModal, setShowAboutModal] = useState(false)
-  const isTouchDevice = useTouchDetection()
 
   // Optimistic paper tracking hooks
   const {
@@ -448,13 +445,6 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     })
   }, [pendingPaper])
 
-  // Mobile ghost paper drag handler (only used on touch devices)
-  const handleMobileGhostPaperDrag = useCallback((x: number, y: number) => {
-    if (!pendingPaper || pendingPaper.stage !== 'positioning') return
-    updatePointer({ x, y })
-    pointerOverrideRef.current = { x, y }
-  }, [pendingPaper, updatePointer])
-
   // Update base scale when pending paper enters positioning stage
   useEffect(() => {
     if (pendingPaper?.stage === 'positioning') {
@@ -712,12 +702,6 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           }}
           onPointerDown={(event) => {
             if (state.mode === ORB_MODE.Attach && pendingPaper?.stage === 'positioning') {
-              // On mobile, prevent tap-to-commit - only allow button to commit
-              // On desktop, allow tap-to-commit as before
-              if (isTouchDevice && event.nativeEvent.pointerType === 'touch') {
-                // Don't commit on mobile touch - user must use "Place Pin" button
-                return
-              }
               confirmPaperPlacement(event)
               return
             }
@@ -823,23 +807,11 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           overrideTarget={cameraOverrideTarget}
           onSphericalChange={handleSphericalChange}
         />
-        {/* Desktop touch gestures (for compatibility) */}
-        {!isTouchDevice && (
-          <TouchGestureHandler
-            enabled={attachActive && pendingPaper?.stage === 'positioning'}
-            onPinchScale={handlePinchScale}
-            onTwistRotate={handleTwistRotate}
-          />
-        )}
-        {/* Mobile touch gestures using @use-gesture/react */}
-        {isTouchDevice && (
-          <MobileGhostPaperGestures
-            enabled={attachActive && pendingPaper?.stage === 'positioning'}
-            onDrag={handleMobileGhostPaperDrag}
-            onPinchScale={handlePinchScale}
-            onTwistRotate={handleTwistRotate}
-          />
-        )}
+        <TouchGestureHandler
+          enabled={attachActive && pendingPaper?.stage === 'positioning'}
+          onPinchScale={handlePinchScale}
+          onTwistRotate={handleTwistRotate}
+        />
       </Canvas>
       {/* <AttachHud mode={state.mode} onEnterAttach={enterAttach} /> */}
       {/* {!pendingPaper && !attachActive && (
@@ -885,104 +857,6 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           zIndex: 1000,
         }}>
           <p>Orb not found. Redirecting to home...</p>
-        </div>
-      )}
-      {/* Place Pin button - only on mobile during positioning */}
-      {isTouchDevice && attachActive && pendingPaper?.stage === 'positioning' && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '40px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 1000,
-          }}
-        >
-          <button
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              // We need to trigger confirmPaperPlacement, but it expects a ThreeEvent
-              // Instead, we'll directly transition to pinning stage
-              if (pendingPaper && ghostTransformRef.current) {
-                const transform = ghostTransformRef.current
-                const layerOffset = pendingPaper.layerOffset ?? nextLayerOffset
-                const center = transform.center.clone()
-                const outwardNormal = normalizeVector(center.clone())
-                const expectedRadius = PAPER_SPHERE_RADIUS + PAPER_OFFSET + layerOffset
-                center.copy(outwardNormal.multiplyScalar(expectedRadius))
-                
-                const spherical = new THREE.Spherical().setFromVector3(center)
-                setLastClickVector(center.clone().normalize())
-                
-                setPendingPaper((prev) => {
-                  if (!prev) return prev
-                  const basePositions = ghostGeometryRef.current?.positions
-                    ? new Float32Array(ghostGeometryRef.current.positions)
-                    : undefined
-                  const baseNormals = ghostGeometryRef.current?.normals
-                    ? new Float32Array(ghostGeometryRef.current.normals)
-                    : undefined
-                  if (basePositions && baseNormals) {
-                    applyLayerOffsetToGeometry(basePositions, baseNormals, layerOffset)
-                  }
-                  return {
-                    ...prev,
-                    stage: 'pinning',
-                    center: transform.center.clone(),
-                    quaternion: transform.quaternion.clone(),
-                    basisRight: transform.right.clone(),
-                    basisUp: transform.up.clone(),
-                    positions: basePositions ?? new Float32Array(),
-                    normals: baseNormals ?? new Float32Array(),
-                    pins: [],
-                    layerOffset,
-                    rotation: wrapAngle(prev.rotation),
-                  }
-                })
-                
-                setCameraOverride({
-                  radius: ATTACH_CAMERA_RADIUS,
-                  phi: spherical.phi,
-                  theta: spherical.theta,
-                })
-              }
-            }}
-            style={{
-              padding: '16px 32px',
-              fontSize: '18px',
-              fontWeight: '600',
-              backgroundColor: '#4F46E5',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-              transition: 'background-color 0.2s, transform 0.1s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#4338CA'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#4F46E5'
-            }}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              e.currentTarget.style.transform = 'scale(0.95)'
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)'
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault()
-              e.currentTarget.style.transform = 'scale(0.95)'
-            }}
-            onTouchEnd={(e) => {
-              e.currentTarget.style.transform = 'scale(1)'
-            }}
-          >
-            Place Pin
-          </button>
         </div>
       )}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
