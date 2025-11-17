@@ -13,6 +13,9 @@ const MAX_PHI = Math.PI - EPS
 const MIN_RADIUS = 1.6
 const MAX_RADIUS = 6.0
 const ZOOM_FACTOR = 0.12
+// Pole protection: reduce rotation sensitivity when near poles to prevent gimbal lock
+const POLE_PROTECTION_THRESHOLD = 0.15 // radians (~8.6 degrees) from pole
+const POLE_PROTECTION_FACTOR = 0.1 // Reduce rotation by 90% when very close to pole
 // Controls the pacing/speed of camera transitions when override target is set (e.g., zoom when entering attach mode)
 // Higher values = faster transition, lower values = slower transition
 // Range: 0.0 (never reaches target) to 1.0 (instant)
@@ -54,6 +57,7 @@ export function CameraController({
   const lastPointer = useRef<PointerPosition | null>(null)
   const velocity = useRef({ theta: 0, phi: 0 })
   const overrideRef = useRef<THREE.Spherical | null>(null)
+  const isPinchingRef = useRef(false) // Track if we're currently pinching
 
   useEffect(() => {
     const s = spherical.current
@@ -84,12 +88,16 @@ export function CameraController({
       onPinchStart: () => {
         // Pinch started - immediately stop any active single-finger drag to prevent rotation
         // This fixes the issue where pinching causes unexpected orb rotation
+        isPinchingRef.current = true
         if (draggingOrbRef.current) {
           setDraggingOrb(false)
           touchDragActiveRef.current = false
           touchStartRef.current = null
           lastPointer.current = null
         }
+        // Clear velocity to prevent momentum from causing rotation during pinch
+        velocity.current.theta = 0
+        velocity.current.phi = 0
       },
       onPinchMove: (scale) => {
         if (!controlsEnabled) return
@@ -99,9 +107,14 @@ export function CameraController({
         // Invert scale so pinch out = zoom in (like mouse wheel)
         const zoomFactor = 1 / scale
         s.radius = THREE.MathUtils.clamp(s.radius * zoomFactor, MIN_RADIUS, MAX_RADIUS)
+        
+        // Ensure rotation doesn't happen during pinch - clear any accumulated velocity
+        velocity.current.theta = 0
+        velocity.current.phi = 0
       },
       onPinchEnd: () => {
-        // Pinch ended
+        // Pinch ended - allow rotation again
+        isPinchingRef.current = false
       },
     },
     controlsEnabled
@@ -132,6 +145,9 @@ export function CameraController({
     const handlePointerMove = (event: PointerEvent) => {
       if (!controlsEnabled || !draggingOrbRef.current || !lastPointer.current) return
       
+      // Don't allow rotation during pinch gestures
+      if (isPinchingRef.current) return
+      
       // Allow touch events for single-finger rotation (pointer events work for touch too)
       // Two-finger gestures (pinch/twist) are handled separately by touch event handlers
       // and won't trigger pointer events in the same way
@@ -142,12 +158,31 @@ export function CameraController({
 
       const s = spherical.current
 
-      s.theta -= dx * ROTATE_SENSITIVITY
-      s.phi -= dy * ROTATE_SENSITIVITY
+      // Apply pole protection: reduce rotation sensitivity when near poles
+      // This prevents gimbal lock and rapid spinning near the poles
+      const distanceFromNorthPole = s.phi // Distance from north pole (phi = 0)
+      const distanceFromSouthPole = Math.PI - s.phi // Distance from south pole (phi = π)
+      const minDistanceFromPole = Math.min(distanceFromNorthPole, distanceFromSouthPole)
+      
+      let thetaSensitivity = ROTATE_SENSITIVITY
+      let phiSensitivity = ROTATE_SENSITIVITY
+      
+      if (minDistanceFromPole < POLE_PROTECTION_THRESHOLD) {
+        // Near a pole - reduce rotation sensitivity to prevent rapid spinning
+        const protectionFactor = Math.max(
+          POLE_PROTECTION_FACTOR,
+          minDistanceFromPole / POLE_PROTECTION_THRESHOLD
+        )
+        thetaSensitivity *= protectionFactor
+        phiSensitivity *= protectionFactor
+      }
+
+      s.theta -= dx * thetaSensitivity
+      s.phi -= dy * phiSensitivity
       s.phi = THREE.MathUtils.clamp(s.phi, MIN_PHI, MAX_PHI)
 
-      velocity.current.theta = -dx * ROTATE_SENSITIVITY
-      velocity.current.phi = -dy * ROTATE_SENSITIVITY
+      velocity.current.theta = -dx * thetaSensitivity
+      velocity.current.phi = -dy * phiSensitivity
     }
 
     const handlePointerUp = () => {
@@ -211,6 +246,9 @@ export function CameraController({
         return
       }
       
+      // Don't allow rotation during pinch gestures
+      if (isPinchingRef.current) return
+      
       // Only process if we're actively dragging (either from touch or pointer events)
       // This prevents conflicts - if pointer events are handling it, we don't double-process
       // The touchDragActiveRef tracks if touch initiated the drag, but we check draggingOrbRef
@@ -232,12 +270,31 @@ export function CameraController({
 
       const s = spherical.current
 
-      s.theta -= dx * ROTATE_SENSITIVITY
-      s.phi -= dy * ROTATE_SENSITIVITY
+      // Apply pole protection: reduce rotation sensitivity when near poles
+      // This prevents gimbal lock and rapid spinning near the poles
+      const distanceFromNorthPole = s.phi // Distance from north pole (phi = 0)
+      const distanceFromSouthPole = Math.PI - s.phi // Distance from south pole (phi = π)
+      const minDistanceFromPole = Math.min(distanceFromNorthPole, distanceFromSouthPole)
+      
+      let thetaSensitivity = ROTATE_SENSITIVITY
+      let phiSensitivity = ROTATE_SENSITIVITY
+      
+      if (minDistanceFromPole < POLE_PROTECTION_THRESHOLD) {
+        // Near a pole - reduce rotation sensitivity to prevent rapid spinning
+        const protectionFactor = Math.max(
+          POLE_PROTECTION_FACTOR,
+          minDistanceFromPole / POLE_PROTECTION_THRESHOLD
+        )
+        thetaSensitivity *= protectionFactor
+        phiSensitivity *= protectionFactor
+      }
+
+      s.theta -= dx * thetaSensitivity
+      s.phi -= dy * phiSensitivity
       s.phi = THREE.MathUtils.clamp(s.phi, MIN_PHI, MAX_PHI)
 
-      velocity.current.theta = -dx * ROTATE_SENSITIVITY
-      velocity.current.phi = -dy * ROTATE_SENSITIVITY
+      velocity.current.theta = -dx * thetaSensitivity
+      velocity.current.phi = -dy * phiSensitivity
       
       // Prevent scrolling while dragging (only affects touch, not mouse)
       event.preventDefault()

@@ -368,6 +368,9 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     }
   }, [attachActive, updatePointer, state.pointer.hasPointer])
 
+  // Ref to track if we're currently dragging the ghost paper (for debugging/logging if needed)
+  const isDraggingGhostPaperRef = useRef(false)
+
   // Mobile touch handler callback for ghost paper positioning
   const handleMobileTouchMove = useCallback(
     (x: number, y: number) => {
@@ -718,6 +721,10 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           }}
           onPointerDown={(event) => {
             if (state.mode === ORB_MODE.Attach && pendingPaper?.stage === 'positioning') {
+              // For touch events, MobileGhostPaperDrag handles tap detection and only
+              // dispatches pointer events for taps (not drags). So if we get here for
+              // a touch event, it's safe to commit.
+              // For mouse/pen, commit immediately.
               confirmPaperPlacement(event)
               return
             }
@@ -831,6 +838,9 @@ export function OrbScene({ orbId }: OrbSceneProps) {
         <MobileGhostPaperDrag
           enabled={attachActive && pendingPaper?.stage === 'positioning'}
           onTouchMove={handleMobileTouchMove}
+          onDragStateChange={(isDragging) => {
+            isDraggingGhostPaperRef.current = isDragging
+          }}
         />
       </Canvas>
       {/* <AttachHud mode={state.mode} onEnterAttach={enterAttach} /> */}
