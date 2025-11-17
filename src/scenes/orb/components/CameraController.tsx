@@ -82,7 +82,14 @@ export function CameraController({
     gl.domElement,
     {
       onPinchStart: () => {
-        // Pinch started - we could disable rotation during pinch if needed
+        // Pinch started - immediately stop any active single-finger drag to prevent rotation
+        // This fixes the issue where pinching causes unexpected orb rotation
+        if (draggingOrbRef.current) {
+          setDraggingOrb(false)
+          touchDragActiveRef.current = false
+          touchStartRef.current = null
+          lastPointer.current = null
+        }
       },
       onPinchMove: (scale) => {
         if (!controlsEnabled) return

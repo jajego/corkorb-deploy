@@ -12,6 +12,7 @@ import { GhostPaper, type GhostPaperTransform } from './components/GhostPaper'
 import { PinnedPaper } from './components/PinnedPaper'
 import { OrbDebugHud } from './components/OrbDebugHud'
 import { TouchGestureHandler } from './components/TouchGestureHandler'
+import { MobileGhostPaperDrag } from './components/MobileGhostPaperDrag'
 import { CanvasCapture } from './components/CanvasCapture'
 import { dispatchOrbEvent, ORB_EVENT } from '../../three/constants/events'
 import { ORB_MODE, useOrbStateMachine } from './state'
@@ -351,8 +352,13 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     }
 
     const handlePointerMove = (event: PointerEvent) => {
-      updatePointer({ x: event.clientX, y: event.clientY })
-      pointerOverrideRef.current = null
+      // Only update pointer from mouse/pointer events (not touch)
+      // Touch events for ghost paper positioning are handled separately below
+      // This ensures desktop experience is unchanged
+      if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
+        updatePointer({ x: event.clientX, y: event.clientY })
+        pointerOverrideRef.current = null
+      }
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -361,6 +367,16 @@ export function OrbScene({ orbId }: OrbSceneProps) {
       window.removeEventListener('pointermove', handlePointerMove)
     }
   }, [attachActive, updatePointer, state.pointer.hasPointer])
+
+  // Mobile touch handler callback for ghost paper positioning
+  const handleMobileTouchMove = useCallback(
+    (x: number, y: number) => {
+      // Update pointer to move ghost paper
+      updatePointer({ x, y })
+      pointerOverrideRef.current = { x, y }
+    },
+    [updatePointer]
+  )
 
   useEffect(() => {
     if (!attachActive) return undefined
@@ -811,6 +827,10 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           enabled={attachActive && pendingPaper?.stage === 'positioning'}
           onPinchScale={handlePinchScale}
           onTwistRotate={handleTwistRotate}
+        />
+        <MobileGhostPaperDrag
+          enabled={attachActive && pendingPaper?.stage === 'positioning'}
+          onTouchMove={handleMobileTouchMove}
         />
       </Canvas>
       {/* <AttachHud mode={state.mode} onEnterAttach={enterAttach} /> */}
