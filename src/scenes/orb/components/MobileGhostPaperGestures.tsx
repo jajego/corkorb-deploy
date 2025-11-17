@@ -2,6 +2,8 @@ import { useThree } from '@react-three/fiber'
 import { useDrag, usePinch } from '@use-gesture/react'
 import { useRef } from 'react'
 
+import { useTwistGesture } from '../hooks/useTwistGesture'
+
 type MobileGhostPaperGesturesProps = {
   enabled: boolean
   onDrag: (x: number, y: number) => void
@@ -11,7 +13,7 @@ type MobileGhostPaperGesturesProps = {
 
 /**
  * Component that handles touch gestures for ghost paper positioning on mobile.
- * Uses @use-gesture/react for drag, pinch, and rotate gestures.
+ * Uses @use-gesture/react for drag and pinch gestures, and the existing twist gesture for rotation.
  * Must be rendered inside a Canvas context to access the WebGL renderer's DOM element.
  */
 export function MobileGhostPaperGestures({
@@ -23,11 +25,10 @@ export function MobileGhostPaperGestures({
   const { gl } = useThree()
   const dragStartRef = useRef<{ x: number; y: number } | null>(null)
   const initialScaleRef = useRef<number>(1.0)
-  const lastRotationRef = useRef<number>(0)
 
   // Drag gesture for moving the ghost paper
   useDrag(
-    ({ xy: [x, y], movement: [mx, my], dragging, first, last }) => {
+    ({ xy: [x, y], dragging, first, last }) => {
       if (!enabled) return
       
       if (first) {
@@ -52,32 +53,21 @@ export function MobileGhostPaperGestures({
     }
   )
 
-  // Pinch gesture for scaling and rotating the ghost paper
+  // Pinch gesture for scaling the ghost paper
   usePinch(
-    ({ offset: [scale], rotation, first, last }) => {
+    ({ offset: [scale], first, last }) => {
       if (!enabled) return
       
       if (first) {
         initialScaleRef.current = 1.0
-        lastRotationRef.current = rotation
       }
       
       // offset[0] is the accumulated scale from the start of the pinch
       // Pass the accumulated scale to the handler
       onPinchScale(scale)
       
-      // rotation is in radians, accumulated from the start
-      // Calculate delta rotation
-      const deltaRotation = rotation - lastRotationRef.current
-      lastRotationRef.current = rotation
-      
-      if (Math.abs(deltaRotation) > 0.001) {
-        onTwistRotate(deltaRotation)
-      }
-      
       if (last) {
         initialScaleRef.current = 1.0
-        lastRotationRef.current = 0
       }
     },
     {
@@ -85,6 +75,24 @@ export function MobileGhostPaperGestures({
       enabled,
       preventDefault: true,
     }
+  )
+
+  // Twist gesture for rotating the ghost paper (using existing hook since usePinch doesn't support rotation)
+  useTwistGesture(
+    gl.domElement,
+    {
+      onTwistStart: () => {
+        // Twist started
+      },
+      onTwistMove: (rotation) => {
+        if (!enabled || !onTwistRotate) return
+        onTwistRotate(rotation)
+      },
+      onTwistEnd: () => {
+        // Twist ended
+      },
+    },
+    enabled && !!onTwistRotate
   )
 
   return null

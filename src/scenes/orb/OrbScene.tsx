@@ -902,12 +902,6 @@ export function OrbScene({ orbId }: OrbSceneProps) {
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              // Create a synthetic pointer event to trigger confirmPaperPlacement
-              // Use the current pointer position
-              const pointerPos = pointerForInteraction.hasPointer && pointerForInteraction.x !== undefined && pointerForInteraction.y !== undefined
-                ? { x: pointerForInteraction.x, y: pointerForInteraction.y }
-                : { x: window.innerWidth / 2, y: window.innerHeight / 2 }
-              
               // We need to trigger confirmPaperPlacement, but it expects a ThreeEvent
               // Instead, we'll directly transition to pinning stage
               if (pendingPaper && ghostTransformRef.current) {
