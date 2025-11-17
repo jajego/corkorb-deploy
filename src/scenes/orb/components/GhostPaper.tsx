@@ -27,8 +27,8 @@ const worldRight = new THREE.Vector3(1, 0, 0)
 
 const quaternionBasis = new THREE.Quaternion()
 const placeholderColor = new THREE.Color('#c8ccd3')
-const whiteColor = new THREE.Color('#ffffff')
-const darkBlueTint = new THREE.Color('#276EDC') // Dark blue for ghost paper overlay
+// const whiteColor = new THREE.Color('#ffffff')
+// const darkBlueTint = new THREE.Color('#276EDC') // Dark blue for ghost paper overlay
 const basisMatrix = new THREE.Matrix4()
 
 export type GhostPaperTransform = {
