@@ -231,9 +231,15 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     // Reset connection state when WebSocket connects (handles reconnections)
   useEffect(() => {
     if (wsStatus === 'connected') {
-      // Reset state when connecting/reconnecting to track users properly
+      // Reset initial connection flag to suppress toasts during reconnection
+      // BUT: Don't clear seenUsersRef - we want to remember which users were already
+      // connected when we first joined, so we don't show duplicate toasts on reconnect.
+      // onUserLeft already removes users from seenUsersRef when they leave, so if they
+      // rejoin, they won't be in seenUsersRef and we'll correctly show a toast.
       initialConnectionCompleteRef.current = false
-      seenUsersRef.current.clear()
+      // NOTE: We intentionally do NOT clear seenUsersRef here to prevent duplicate toasts
+      // on reconnection. Users who were already connected when we first joined should
+      // remain in seenUsersRef across reconnections.
     }
   }, [wsStatus])
 

@@ -65,14 +65,19 @@ export function useOrbWebSocketHandlers({
       websocketHasLoadedPapersRef.current = true
 
       // Mark initial connection as complete when we receive state
-      // This happens after the backend has sent all existing users' user_joined messages
-      // At this point, all users seen so far are in seenUsersRef, so future joins will show toasts
+      // The backend sends user_joined messages for existing users immediately on connect (before state),
+      // but these messages can arrive asynchronously. By the time we receive state, we should have
+      // received most/all of those user_joined messages, and they're tracked in seenUsersRef.
+      // 
+      // After this point, any user_joined messages we receive should be for genuinely new users
+      // (unless they're late-arriving messages from the initial batch, which we filter by checking seenUsersRef).
       if (!initialConnectionCompleteRef.current) {
-        // First connection - mark as complete (seenUsersRef already has all initial users)
+        // First connection - mark as complete (seenUsersRef should have all initial users by now)
         initialConnectionCompleteRef.current = true
       } else {
-        // Reconnection - state was already reset when WebSocket connected
-        // Mark as complete now that we've received state
+        // Reconnection - initialConnectionCompleteRef was reset when WebSocket connected
+        // Mark as complete now that we've received state. seenUsersRef persists across reconnections,
+        // so users who were already connected when we first joined won't trigger toasts.
         initialConnectionCompleteRef.current = true
       }
 
@@ -558,18 +563,27 @@ export function useOrbWebSocketHandlers({
         return
       }
 
-      // During initial connection phase, track users as "seen" but don't show toasts
+      // During initial connection phase (first connection or reconnection), track users as "seen" but don't show toasts
+      // The backend sends user_joined messages for ALL existing users when we connect, and these should NOT show toasts.
+      // We track them in seenUsersRef during this phase, and persist this across reconnections.
       if (!initialConnectionCompleteRef.current) {
         seenUsersRef.current.add(otherUserId)
         return
       }
 
-      // After initial connection is complete, only show toast if we haven't seen this user before
-      // This prevents duplicate toasts on reconnection
+      // After initial connection is complete, check if we've seen this user before
+      // If we have, this is likely a late-arriving message from the initial connection phase
+      // (the backend sends user_joined for existing users immediately on connect, but messages can arrive
+      // asynchronously after onState completes). Don't show a toast for these.
+      // 
+      // Note: If a user left and rejoined, onUserLeft will have removed them from seenUsersRef,
+      // so they won't be in the set here, and we'll correctly show a toast for their rejoin.
       if (seenUsersRef.current.has(otherUserId)) {
         return
       }
 
+      // This is a genuinely new user joining (not in seenUsersRef and connection is complete)
+      // OR a user who left and is now rejoining (they were removed from seenUsersRef by onUserLeft)
       // Mark as seen and show toast
       seenUsersRef.current.add(otherUserId)
 
@@ -591,6 +605,8 @@ export function useOrbWebSocketHandlers({
 
   const onUserLeft = useCallback(
     (otherUserId: string) => {
+      // Remove user from seenUsersRef when they leave
+      // This ensures that if they reconnect later, we'll show a toast (since they won't be in seenUsersRef)
       seenUsersRef.current.delete(otherUserId)
     },
     [seenUsersRef]

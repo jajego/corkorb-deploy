@@ -351,6 +351,12 @@ export function useOrbWebSocket({
         reconnectAttemptsRef.current = 0
         wasHiddenRef.current = false
         
+        // Clear connectedUsers when reconnecting - the backend will send user_joined messages
+        // for all existing users, which will repopulate the set correctly. This prevents
+        // duplicate counts when reconnecting multiple times.
+        setConnectedUsers(new Set())
+        setAnonymousUsers(new Set())
+        
         // The backend will send us our own user_joined message so we can add ourselves
         // to connectedUsers. We'll handle it in the onmessage handler.
         
