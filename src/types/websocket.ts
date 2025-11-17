@@ -21,6 +21,8 @@ export interface StateMessage extends WebSocketMessageBase {
   type: 'state'
   orb_id: string
   papers: ServerPaper[]
+  connected_users_count?: number
+  anonymous_users_count?: number
 }
 
 export interface PaperCreatedMessage extends WebSocketMessageBase {
@@ -73,6 +75,13 @@ export interface ViewCenterUpdateMessage extends WebSocketMessageBase {
   view_center: ViewCenter
 }
 
+export interface ConnectedUsersCountMessage extends WebSocketMessageBase {
+  type: 'connected_users_count'
+  orb_id: string
+  connected_users_count: number
+  anonymous_users_count: number
+}
+
 export interface PingMessage {
   type: 'ping'
 }
@@ -88,6 +97,7 @@ export type WebSocketMessage =
   | UserJoinedMessage
   | UserLeftMessage
   | ViewCenterUpdateMessage
+  | ConnectedUsersCountMessage
   | PingMessage
 
 export type WrappedEventData =

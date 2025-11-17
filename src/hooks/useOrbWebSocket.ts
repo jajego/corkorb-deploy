@@ -47,10 +47,10 @@ export function useOrbWebSocket({
 }: UseOrbWebSocketOptions) {
   const { getToken } = useAuth()
   const [status, setStatus] = useState<WebSocketStatus>('disconnected')
-  const [connectedUsers, setConnectedUsers] = useState<Set<string>>(new Set())
-  const [anonymousUsers, setAnonymousUsers] = useState<Set<string>>(new Set())
+  const [connectedUsersCount, setConnectedUsersCount] = useState<number>(0)
+  const [anonymousUsersCount, setAnonymousUsersCount] = useState<number>(0)
   const wsRef = useRef<WebSocket | null>(null)
-  const currentUserIdRef = useRef<string | null>(null) // Track current user's ID
+  const currentUserIdRef = useRef<string | null>(null) // Track current user's ID (still needed for filtering own user_joined messages)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const reconnectAttemptsRef = useRef(0)
   const messageQueueRef = useRef<QueuedMessage[]>([])
@@ -194,9 +194,27 @@ export function useOrbWebSocket({
           // Use callbacks from ref to get latest version without causing reconnections
           const callbacks = callbacksRef.current
           switch (message.type) {
-            case 'state':
-              callbacks.onState?.(message.papers || [])
+            case 'state': {
+              // Update user counts from state message
+              const stateMessage = message as import('../types/websocket').StateMessage
+              if (typeof stateMessage.connected_users_count === 'number') {
+                setConnectedUsersCount(stateMessage.connected_users_count)
+              }
+              if (typeof stateMessage.anonymous_users_count === 'number') {
+                setAnonymousUsersCount(stateMessage.anonymous_users_count)
+              }
+              
+              callbacks.onState?.(stateMessage.papers || [])
               break
+            }
+
+            case 'connected_users_count': {
+              // Update user counts from dedicated count message
+              const countMessage = message as import('../types/websocket').ConnectedUsersCountMessage
+              setConnectedUsersCount(countMessage.connected_users_count)
+              setAnonymousUsersCount(countMessage.anonymous_users_count)
+              break
+            }
 
             case 'success': {
               // Success messages can contain wrapped events (paper_created, paper_deleted, etc.)
@@ -213,26 +231,14 @@ export function useOrbWebSocket({
                 } else if (wrappedData.type === 'user_joined' && 'user_id' in wrappedData) {
                   const userId = wrappedData.user_id as string
                   const username = (wrappedData as any).username as string | null | undefined
-                  const isAnonymous = userId.startsWith('user:anonymous:')
                   
                   // Track our own user_id when we receive our own user_joined message
                   if (!currentUserIdRef.current) {
                     currentUserIdRef.current = userId
                   }
                   
-                  setConnectedUsers((prev) => {
-                    const next = new Set(prev)
-                    next.add(userId)
-                    return next
-                  })
-                  if (isAnonymous) {
-                    setAnonymousUsers((prev) => {
-                      const next = new Set(prev)
-                      next.add(userId)
-                      return next
-                    })
-                  }
                   // Only call onUserJoined callback for OTHER users (not ourselves)
+                  // Count is updated by backend via connected_users_count message
                   if (currentUserIdRef.current && userId === currentUserIdRef.current) {
                     // This is our own join - don't show toast
                   } else {
@@ -241,19 +247,8 @@ export function useOrbWebSocket({
                 } else if (wrappedData.type === 'user_left' && 'user_id' in wrappedData) {
                   const userId = wrappedData.user_id as string
                   const username = (wrappedData as any).username as string | null | undefined
-                  const isAnonymous = userId.startsWith('user:anonymous:')
-                  setConnectedUsers((prev) => {
-                    const next = new Set(prev)
-                    next.delete(userId)
-                    return next
-                  })
-                  if (isAnonymous) {
-                    setAnonymousUsers((prev) => {
-                      const next = new Set(prev)
-                      next.delete(userId)
-                      return next
-                    })
-                  }
+                  
+                  // Count is updated by backend via connected_users_count message
                   callbacks.onUserLeft?.(userId, username)
                 } else if (wrappedData.type === 'view_center_update' && 'user_id' in wrappedData && 'view_center' in wrappedData) {
                   callbacks.onViewCenterUpdate?.(wrappedData.user_id as string, wrappedData.view_center as ViewCenter)
@@ -274,36 +269,22 @@ export function useOrbWebSocket({
               callbacks.onPaperCreated?.(message.paper)
               break
 
-            case 'paper_deleted':
+            case 'paper_deleted': {
               // Direct paper_deleted message (if not wrapped)
-              const reason = (message as any).reason as string | undefined
-              logger.info(`[WebSocket] Received paper_deleted message (direct) for paper: ${message.paper_id}, reason: ${reason}`)
-              callbacks.onPaperDeleted?.(message.paper_id, reason)
+              const paperDeletedMessage = message as import('../types/websocket').PaperDeletedMessage
+              logger.info(`[WebSocket] Received paper_deleted message (direct) for paper: ${paperDeletedMessage.paper_id}, reason: ${paperDeletedMessage.reason}`)
+              callbacks.onPaperDeleted?.(paperDeletedMessage.paper_id, paperDeletedMessage.reason)
               break
+            }
 
             case 'user_joined':
-              const isJoinedAnonymous = message.user_id.startsWith('user:anonymous:')
-              
               // Track our own user_id when we receive our own user_joined message
-              // The backend sends us our own user_joined message first so we can add ourselves
               if (!currentUserIdRef.current) {
                 currentUserIdRef.current = message.user_id
               }
               
-              setConnectedUsers((prev) => {
-                const next = new Set(prev)
-                next.add(message.user_id)
-                return next
-              })
-              if (isJoinedAnonymous) {
-                setAnonymousUsers((prev) => {
-                  const next = new Set(prev)
-                  next.add(message.user_id)
-                  return next
-                })
-              }
               // Only call onUserJoined callback for OTHER users (not ourselves)
-              // We know it's ourselves if currentUserIdRef matches
+              // Count is updated by backend via connected_users_count message
               if (currentUserIdRef.current && message.user_id === currentUserIdRef.current) {
                 // This is our own join - don't show toast
               } else {
@@ -313,19 +294,7 @@ export function useOrbWebSocket({
 
             case 'user_left':
               logger.debug(`User left: ${message.user_id} (username: ${message.username || 'unknown'})`)
-              const isLeftAnonymous = message.user_id.startsWith('user:anonymous:')
-              setConnectedUsers((prev) => {
-                const next = new Set(prev)
-                next.delete(message.user_id)
-                return next
-              })
-              if (isLeftAnonymous) {
-                setAnonymousUsers((prev) => {
-                  const next = new Set(prev)
-                  next.delete(message.user_id)
-                  return next
-                })
-              }
+              // Count is updated by backend via connected_users_count message
               callbacks.onUserLeft?.(message.user_id, message.username)
               break
 
@@ -351,14 +320,9 @@ export function useOrbWebSocket({
         reconnectAttemptsRef.current = 0
         wasHiddenRef.current = false
         
-        // Clear connectedUsers when reconnecting - the backend will send user_joined messages
-        // for all existing users, which will repopulate the set correctly. This prevents
-        // duplicate counts when reconnecting multiple times.
-        setConnectedUsers(new Set())
-        setAnonymousUsers(new Set())
-        
-        // The backend will send us our own user_joined message so we can add ourselves
-        // to connectedUsers. We'll handle it in the onmessage handler.
+        // Reset counts - backend will send updated counts via state message and connected_users_count messages
+        setConnectedUsersCount(0)
+        setAnonymousUsersCount(0)
         
         // Send queued messages
         while (messageQueueRef.current.length > 0) {
@@ -368,7 +332,7 @@ export function useOrbWebSocket({
           }
         }
 
-        // Request initial state
+        // Request initial state (includes user counts)
         ws.send(JSON.stringify({
           type: 'get_state',
           orb_id: orbId,
@@ -388,6 +352,10 @@ export function useOrbWebSocket({
         if (wsRef.current === ws) {
           setStatus('disconnected')
           wsRef.current = null
+          
+          // Reset counts on disconnect - backend will send updated counts when we reconnect
+          setConnectedUsersCount(0)
+          setAnonymousUsersCount(0)
         }
 
         // Clear pending requests
@@ -438,7 +406,8 @@ export function useOrbWebSocket({
       wsRef.current = null
     }
     setStatus('disconnected')
-    setConnectedUsers(new Set())
+    setConnectedUsersCount(0)
+    setAnonymousUsersCount(0)
     messageQueueRef.current = []
     pendingRequestsRef.current.clear()
   }, [])
@@ -549,18 +518,17 @@ export function useOrbWebSocket({
       reconnectAttemptsRef.current = 0
       // Clear current user ID when disconnecting
       currentUserIdRef.current = null
-      // Clear user sets when disconnecting
-      setConnectedUsers(new Set())
-      setAnonymousUsers(new Set())
+      // Reset counts when disconnecting
+      setConnectedUsersCount(0)
+      setAnonymousUsersCount(0)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orbId, enabled, username]) // connect and disconnect are stable (memoized), so we don't need them in deps
 
   return {
     status,
-    connectedUsersCount: connectedUsers.size,
-    anonymousUsersCount: anonymousUsers.size,
-    connectedUsers: Array.from(connectedUsers),
+    connectedUsersCount,
+    anonymousUsersCount,
     sendMessage,
     connect,
     disconnect,

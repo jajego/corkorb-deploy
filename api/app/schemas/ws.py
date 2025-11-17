@@ -106,6 +106,8 @@ class StateMessage(WSMessage):
   type: Literal["state"] = "state"
   orb_id: str
   papers: list[Dict[str, Any]] = Field(default_factory=list)
+  connected_users_count: int = Field(default=0, description="Number of connected users")
+  anonymous_users_count: int = Field(default=0, description="Number of anonymous users")
 
 
 class UserJoinedMessage(WSMessage):
@@ -143,6 +145,14 @@ class PingMessage(WSMessage):
 class PongMessage(WSMessage):
   """Pong message (client -> server in response to ping)."""
   type: Literal["pong"] = "pong"
+
+
+class ConnectedUsersCountMessage(WSMessage):
+  """Update on connected users count."""
+  type: Literal["connected_users_count"] = "connected_users_count"
+  orb_id: str
+  connected_users_count: int = Field(..., description="Total number of connected users")
+  anonymous_users_count: int = Field(..., description="Number of anonymous users")
 
 
 # Union type for client messages (excluding ping/pong which are handled separately)

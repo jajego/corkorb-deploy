@@ -135,7 +135,7 @@ async def handle_delete_paper(
 
 
 async def handle_get_state(
-  session: AsyncSession, message: GetStateMessage, user_id: str
+  session: AsyncSession, message: GetStateMessage, user_id: str, connection_manager
 ) -> StateMessage:
   """Handle get_state message."""
   try:
@@ -150,9 +150,19 @@ async def handle_get_state(
     papers = await paper_service.get_papers_for_orb(session, message.orb_id)
     papers_data = [paper.model_dump(mode='json') for paper in papers]
     
+    # Get connected users count from connection manager
+    all_users = connection_manager.get_users_in_orb(message.orb_id)
+    connected_count = len(all_users)
+    anonymous_count = sum(1 for uid in all_users if uid.startswith('user:anonymous:'))
+    
     await session.commit()
     
-    response = StateMessage(orb_id=message.orb_id, papers=papers_data)
+    response = StateMessage(
+      orb_id=message.orb_id, 
+      papers=papers_data,
+      connected_users_count=connected_count,
+      anonymous_users_count=anonymous_count
+    )
     return response
   except AuthorizationError as e:
     raise ValueError(f"Authorization failed: {str(e)}")

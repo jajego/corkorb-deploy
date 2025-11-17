@@ -11,6 +11,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketExceptio
 from app.db.session import async_session_factory
 from app.schemas.ws import (
   ClientMessage,
+  ConnectedUsersCountMessage,
   CreateOrbMessage,
   CreatePaperMessage,
   DeleteOrbMessage,
@@ -136,6 +137,18 @@ async def orb_websocket(websocket: WebSocket, orb_id: str):
       join_message = UserJoinedMessage(orb_id=orb_id, user_id=user_id, username=username)
       await connection_manager.broadcast_to_orb(orb_id, join_message.model_dump(), exclude=websocket)
       logger.info(f"[USER_JOIN] Broadcast user_joined for new user {user_id} (username: {username}) to all other users in orb {orb_id}")
+      
+      # Broadcast updated user count to all users (including the new user)
+      all_users_after_join = connection_manager.get_users_in_orb(orb_id)
+      connected_count = len(all_users_after_join)
+      anonymous_count = sum(1 for uid in all_users_after_join if uid.startswith('user:anonymous:'))
+      count_message = ConnectedUsersCountMessage(
+        orb_id=orb_id,
+        connected_users_count=connected_count,
+        anonymous_users_count=anonymous_count
+      )
+      await connection_manager.broadcast_to_orb(orb_id, count_message.model_dump())
+      logger.info(f"[USER_COUNT] Broadcast updated count: {connected_count} total ({anonymous_count} anonymous) for orb {orb_id}")
     except (RuntimeError, WebSocketDisconnect) as e:
       logger.warning(f"WebSocket closed during initialization: {e}")
       if heartbeat_manager:
@@ -235,7 +248,7 @@ async def orb_websocket(websocket: WebSocket, orb_id: str):
               await send_error(websocket, "orb_id mismatch", "orb_mismatch", request_id)
               continue
             
-            response = await handle_get_state(session, message, user_id)
+            response = await handle_get_state(session, message, user_id, connection_manager)
             await websocket.send_json(response.model_dump(mode='json'))
             
           elif isinstance(message, UpdateViewCenterMessage):
@@ -290,5 +303,17 @@ async def orb_websocket(websocket: WebSocket, orb_id: str):
       await connection_manager.broadcast_to_orb(
         disconnected_orb_id, leave_message.model_dump()
       )
+      
+      # Broadcast updated user count after user leaves
+      all_users_after_leave = connection_manager.get_users_in_orb(disconnected_orb_id)
+      connected_count = len(all_users_after_leave)
+      anonymous_count = sum(1 for uid in all_users_after_leave if uid.startswith('user:anonymous:'))
+      count_message = ConnectedUsersCountMessage(
+        orb_id=disconnected_orb_id,
+        connected_users_count=connected_count,
+        anonymous_users_count=anonymous_count
+      )
+      await connection_manager.broadcast_to_orb(disconnected_orb_id, count_message.model_dump())
+      logger.info(f"[USER_COUNT] Broadcast updated count: {connected_count} total ({anonymous_count} anonymous) for orb {disconnected_orb_id}")
       
       logger.info(f"Cleaned up connection: user={user_id} (username: {username}), orb={disconnected_orb_id}, connection_id={connection_id}")
