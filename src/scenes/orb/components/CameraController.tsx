@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { ORB_EVENT } from '../../../three/constants/events'
 import { usePinchGesture } from '../hooks/usePinchGesture'
 
-const ROTATE_SENSITIVITY = 0.004
+const ROTATE_SENSITIVITY = 0.002
 const DAMPING = 0.92
 const EPS = 0.001
 const MIN_PHI = EPS
@@ -35,6 +35,7 @@ type CameraControllerProps = {
   controlsEnabled: boolean
   overrideTarget?: { radius?: number; phi?: number; theta?: number } | null
   onSphericalChange?: (spherical: THREE.Spherical) => void
+  disableRotationWhen?: boolean // When true, disable orb rotation (e.g., when ghost paper is being manipulated)
 }
 
 type PointerPosition = { x: number; y: number }
@@ -47,6 +48,7 @@ export function CameraController({
   controlsEnabled,
   overrideTarget = null,
   onSphericalChange,
+  disableRotationWhen = false,
 }: CameraControllerProps) {
   const { camera, gl } = useThree()
 
@@ -124,6 +126,9 @@ export function CameraController({
 
     const handlePointerMove = (event: PointerEvent) => {
       if (!controlsEnabled || !draggingOrbRef.current || !lastPointer.current) return
+      
+      // Don't rotate orb if ghost paper interaction is active (prevents conflicts)
+      if (disableRotationWhen) return
       
       // Allow touch events for single-finger rotation (pointer events work for touch too)
       // Two-finger gestures (pinch/twist) are handled separately by touch event handlers
@@ -218,6 +223,9 @@ export function CameraController({
         return
       }
       
+      // Don't rotate orb if ghost paper interaction is active (prevents conflicts)
+      if (disableRotationWhen) return
+      
       const touch = event.touches[0]
       const dx = touch.clientX - lastPointer.current.x
       const dy = touch.clientY - lastPointer.current.y
@@ -301,7 +309,7 @@ export function CameraController({
       dom.removeEventListener('touchcancel', handleTouchCancel)
       dom.removeEventListener('wheel', handleWheel)
     }
-  }, [gl, setDraggingOrb, controlsEnabled])
+  }, [gl, setDraggingOrb, controlsEnabled, disableRotationWhen])
 
   useFrame((_, delta) => {
     const s = spherical.current
