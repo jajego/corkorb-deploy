@@ -16,6 +16,7 @@
     "@clerk/shared": "^3.33.0",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",
+    "@use-gesture/react": "^10.3.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^6.28.0",
