@@ -370,6 +370,8 @@ export function OrbScene({ orbId }: OrbSceneProps) {
 
   // Ref to track if we're currently dragging the ghost paper (for debugging/logging if needed)
   const isDraggingGhostPaperRef = useRef(false)
+  // Ref to track if we're actively handling a touch (any touch, not just dragging)
+  const isHandlingTouchRef = useRef(false)
 
   // Mobile touch handler callback for ghost paper positioning
   const handleMobileTouchMove = useCallback(
@@ -721,9 +723,18 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           }}
           onPointerDown={(event) => {
             if (state.mode === ORB_MODE.Attach && pendingPaper?.stage === 'positioning') {
+              // Safety check: If this is a touch event and we're actively handling a touch,
+              // ignore it. MobileGhostPaperDrag will handle tap detection and dispatch a synthetic
+              // pointer event only for actual taps (not drags).
+              // This prevents immediate commits when the user touches down.
+              if (event.nativeEvent.pointerType === 'touch' && isHandlingTouchRef.current) {
+                // This is a touch event while we're handling a touch - ignore it, don't commit
+                // MobileGhostPaperDrag will dispatch a synthetic event for taps only
+                return
+              }
               // For touch events, MobileGhostPaperDrag handles tap detection and only
               // dispatches pointer events for taps (not drags). So if we get here for
-              // a touch event, it's safe to commit.
+              // a touch event, it's safe to commit (it's the synthetic event from a tap).
               // For mouse/pen, commit immediately.
               confirmPaperPlacement(event)
               return
@@ -840,6 +851,9 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           onTouchMove={handleMobileTouchMove}
           onDragStateChange={(isDragging) => {
             isDraggingGhostPaperRef.current = isDragging
+          }}
+          onTouchActiveChange={(isActive) => {
+            isHandlingTouchRef.current = isActive
           }}
         />
       </Canvas>

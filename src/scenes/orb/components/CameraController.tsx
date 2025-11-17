@@ -14,8 +14,8 @@ const MIN_RADIUS = 1.6
 const MAX_RADIUS = 6.0
 const ZOOM_FACTOR = 0.12
 // Pole protection: reduce rotation sensitivity when near poles to prevent gimbal lock
-const POLE_PROTECTION_THRESHOLD = 0.15 // radians (~8.6 degrees) from pole
-const POLE_PROTECTION_FACTOR = 0.1 // Reduce rotation by 90% when very close to pole
+const POLE_PROTECTION_THRESHOLD = 0.1 // radians (~5.7 degrees) from pole - only very close to pole
+const POLE_PROTECTION_FACTOR = 0.3 // Reduce rotation by 70% when very close to pole (less aggressive)
 // Controls the pacing/speed of camera transitions when override target is set (e.g., zoom when entering attach mode)
 // Higher values = faster transition, lower values = slower transition
 // Range: 0.0 (never reaches target) to 1.0 (instant)

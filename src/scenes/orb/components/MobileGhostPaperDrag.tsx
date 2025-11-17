@@ -5,6 +5,7 @@ type MobileGhostPaperDragProps = {
   enabled: boolean
   onTouchMove: (x: number, y: number) => void
   onDragStateChange?: (isDragging: boolean) => void
+  onTouchActiveChange?: (isActive: boolean) => void // Callback when touch starts/ends (not just drag)
 }
 
 /**
@@ -12,7 +13,7 @@ type MobileGhostPaperDragProps = {
  * Must be rendered inside a Canvas context to access the WebGL renderer's DOM element.
  * Only handles single-finger touches - two-finger gestures are handled by TouchGestureHandler.
  */
-export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }: MobileGhostPaperDragProps) {
+export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange, onTouchActiveChange }: MobileGhostPaperDragProps) {
   const { gl } = useThree()
 
   useEffect(() => {
@@ -22,6 +23,7 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
     let isDraggingPaper = false
     let touchStartPos: { x: number; y: number } | null = null
     let touchStartTime = 0
+    let isHandlingTouch = false // Flag to track if we're actively handling a touch
     const DRAG_THRESHOLD = 10 // pixels - if moved more than this, it's a drag
     const TAP_MAX_DURATION = 300 // ms - if longer than this, it's not a tap
 
@@ -34,12 +36,17 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
         if (isDraggingPaper) {
           isDraggingPaper = false
           touchStartPos = null
+          isHandlingTouch = false
+          onTouchActiveChange?.(false)
           onDragStateChange?.(false)
         }
         return
       }
 
       const touch = event.touches[0]
+      // Set flag IMMEDIATELY before anything else - this prevents pointer events from firing
+      isHandlingTouch = true
+      onTouchActiveChange?.(true) // Notify that we're handling a touch
       touchStartPos = { x: touch.clientX, y: touch.clientY }
       touchStartTime = Date.now()
       isDraggingPaper = false // Start as false, will be set to true on first move
@@ -59,6 +66,8 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
         if (isDraggingPaper) {
           isDraggingPaper = false
           touchStartPos = null
+          isHandlingTouch = false
+          onTouchActiveChange?.(false)
           onDragStateChange?.(false)
         }
         return
@@ -107,10 +116,11 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
             
             // Only commit if it was truly a tap (minimal movement)
             if (finalDistance <= DRAG_THRESHOLD) {
-              // Clear touchStartPos BEFORE dispatching synthetic event
+              // Clear flags BEFORE dispatching synthetic event
               // This allows the synthetic pointer event to pass through handlePointerDown
               const tapPosition = { x: lastTouch.clientX, y: lastTouch.clientY }
               touchStartPos = null
+              isHandlingTouch = false // Clear flag so synthetic event can pass through
               
               // Reset drag state
               if (isDraggingPaper) {
@@ -142,6 +152,8 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
           onDragStateChange?.(false)
         }
         touchStartPos = null
+        isHandlingTouch = false // Clear flag when touch ends
+        onTouchActiveChange?.(false) // Notify that touch handling ended
       } else if (event.touches.length === 2) {
         // Two-finger gesture started - stop single-finger drag
         if (isDraggingPaper) {
@@ -149,6 +161,8 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
           onDragStateChange?.(false)
         }
         touchStartPos = null
+        isHandlingTouch = false // Clear flag when two-finger gesture starts
+        onTouchActiveChange?.(false) // Notify that touch handling ended
       }
       
       // Stop propagation to prevent any default behavior
@@ -161,6 +175,9 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
         isDraggingPaper = false
         onDragStateChange?.(false)
       }
+      touchStartPos = null
+      isHandlingTouch = false // Clear flag on cancel
+      onTouchActiveChange?.(false) // Notify that touch handling ended
     }
 
     // CRITICAL: Also intercept pointer events that come from touch
@@ -171,9 +188,9 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
       // Only intercept pointer events that come from touch (not mouse/pen)
       if (event.pointerType !== 'touch') return
       
-      // If we have an active touch (touchStartPos exists), prevent this pointer event
-      // from reaching the CorkOrb. We'll handle taps manually in handleTouchEnd.
-      if (touchStartPos !== null) {
+      // If we're actively handling a touch, prevent this pointer event from reaching CorkOrb
+      // The flag is set immediately in handleTouchStart, before pointer events can fire
+      if (isHandlingTouch) {
         event.stopPropagation()
         event.preventDefault()
       }
@@ -199,7 +216,7 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
       canvasElement.removeEventListener('touchcancel', handleTouchCancel, { capture: true })
       canvasElement.removeEventListener('pointerdown', handlePointerDown, { capture: true })
     }
-  }, [enabled, gl, onTouchMove, onDragStateChange])
+    }, [enabled, gl, onTouchMove, onDragStateChange, onTouchActiveChange])
 
   return null
 }
