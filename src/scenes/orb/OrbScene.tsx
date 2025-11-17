@@ -12,7 +12,6 @@ import { GhostPaper, type GhostPaperTransform } from './components/GhostPaper'
 import { PinnedPaper } from './components/PinnedPaper'
 import { OrbDebugHud } from './components/OrbDebugHud'
 import { TouchGestureHandler } from './components/TouchGestureHandler'
-import { MobileGhostPaperDrag } from './components/MobileGhostPaperDrag'
 import { CanvasCapture } from './components/CanvasCapture'
 import { dispatchOrbEvent, ORB_EVENT } from '../../three/constants/events'
 import { ORB_MODE, useOrbStateMachine } from './state'
@@ -352,13 +351,8 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     }
 
     const handlePointerMove = (event: PointerEvent) => {
-      // Only update pointer from mouse/pointer events (not touch)
-      // Touch events for ghost paper positioning are handled separately below
-      // This ensures desktop experience is unchanged
-      if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
-        updatePointer({ x: event.clientX, y: event.clientY })
-        pointerOverrideRef.current = null
-      }
+      updatePointer({ x: event.clientX, y: event.clientY })
+      pointerOverrideRef.current = null
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -367,21 +361,6 @@ export function OrbScene({ orbId }: OrbSceneProps) {
       window.removeEventListener('pointermove', handlePointerMove)
     }
   }, [attachActive, updatePointer, state.pointer.hasPointer])
-
-  // Ref to track if we're currently dragging the ghost paper (for debugging/logging if needed)
-  const isDraggingGhostPaperRef = useRef(false)
-  // Ref to track if we're actively handling a touch (any touch, not just dragging)
-  const isHandlingTouchRef = useRef(false)
-
-  // Mobile touch handler callback for ghost paper positioning
-  const handleMobileTouchMove = useCallback(
-    (x: number, y: number) => {
-      // Update pointer to move ghost paper
-      updatePointer({ x, y })
-      pointerOverrideRef.current = { x, y }
-    },
-    [updatePointer]
-  )
 
   useEffect(() => {
     if (!attachActive) return undefined
@@ -723,19 +702,6 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           }}
           onPointerDown={(event) => {
             if (state.mode === ORB_MODE.Attach && pendingPaper?.stage === 'positioning') {
-              // Safety check: If this is a touch event and we're actively handling a touch,
-              // ignore it. MobileGhostPaperDrag will handle tap detection and dispatch a synthetic
-              // pointer event only for actual taps (not drags).
-              // This prevents immediate commits when the user touches down.
-              if (event.nativeEvent.pointerType === 'touch' && isHandlingTouchRef.current) {
-                // This is a touch event while we're handling a touch - ignore it, don't commit
-                // MobileGhostPaperDrag will dispatch a synthetic event for taps only
-                return
-              }
-              // For touch events, MobileGhostPaperDrag handles tap detection and only
-              // dispatches pointer events for taps (not drags). So if we get here for
-              // a touch event, it's safe to commit (it's the synthetic event from a tap).
-              // For mouse/pen, commit immediately.
               confirmPaperPlacement(event)
               return
             }
@@ -845,16 +811,6 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           enabled={attachActive && pendingPaper?.stage === 'positioning'}
           onPinchScale={handlePinchScale}
           onTwistRotate={handleTwistRotate}
-        />
-        <MobileGhostPaperDrag
-          enabled={attachActive && pendingPaper?.stage === 'positioning'}
-          onTouchMove={handleMobileTouchMove}
-          onDragStateChange={(isDragging) => {
-            isDraggingGhostPaperRef.current = isDragging
-          }}
-          onTouchActiveChange={(isActive) => {
-            isHandlingTouchRef.current = isActive
-          }}
         />
       </Canvas>
       {/* <AttachHud mode={state.mode} onEnterAttach={enterAttach} /> */}

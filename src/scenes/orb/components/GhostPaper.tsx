@@ -27,8 +27,7 @@ const worldRight = new THREE.Vector3(1, 0, 0)
 
 const quaternionBasis = new THREE.Quaternion()
 const placeholderColor = new THREE.Color('#c8ccd3')
-// const whiteColor = new THREE.Color('#ffffff')
-// const darkBlueTint = new THREE.Color('#276EDC') // Dark blue for ghost paper overlay
+const whiteColor = new THREE.Color('#ffffff')
 const basisMatrix = new THREE.Matrix4()
 
 export type GhostPaperTransform = {
@@ -237,14 +236,10 @@ export function GhostPaper({
     ) {
       if (textureReady) {
         material.map = texture
-        // Apply dark blue tint for ghost paper appearance (0.5 opacity overlay effect)
-        // Multiply white by dark blue to create the tinted effect
-        // material.color.copy(whiteColor).multiply(darkBlueTint)
-        material.opacity = 1
+        material.color.copy(whiteColor)
       } else {
         material.map = null
         material.color.copy(placeholderColor)
-        material.opacity = 1
       }
       material.needsUpdate = true
       lastTextureReadyRef.current = textureReady
