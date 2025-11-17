@@ -7,6 +7,7 @@ import { ORB_EVENT } from '../../../three/constants/events'
 import { useTouchDetection } from '../hooks/useTouchDetection'
 
 const ROTATE_SENSITIVITY = 0.004
+const TOUCH_ROTATE_SENSITIVITY = 0.001 // Much lower sensitivity for touch devices
 const DAMPING = 0.92
 const EPS = 0.001
 const MIN_PHI = EPS
@@ -98,12 +99,13 @@ export function CameraController({
       
       if (dragging) {
         const s = spherical.current
-        s.theta -= mx * ROTATE_SENSITIVITY
-        s.phi -= my * ROTATE_SENSITIVITY
+        // Use much lower sensitivity for touch devices
+        s.theta -= mx * TOUCH_ROTATE_SENSITIVITY
+        s.phi -= my * TOUCH_ROTATE_SENSITIVITY
         s.phi = THREE.MathUtils.clamp(s.phi, MIN_PHI, MAX_PHI)
         
-        velocity.current.theta = -mx * ROTATE_SENSITIVITY
-        velocity.current.phi = -my * ROTATE_SENSITIVITY
+        velocity.current.theta = -mx * TOUCH_ROTATE_SENSITIVITY
+        velocity.current.phi = -my * TOUCH_ROTATE_SENSITIVITY
       }
       
       if (last) {
@@ -116,6 +118,7 @@ export function CameraController({
       pointer: { buttons: [0, 1, 2, 3, 4] },
       preventDefault: false, // Don't prevent default to avoid passive listener errors
       filterTaps: true,
+      threshold: 5, // Require 5px movement before considering it a drag
     }
   )
 

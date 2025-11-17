@@ -25,11 +25,17 @@ export function MobileGhostPaperGestures({
   const { gl } = useThree()
   const dragStartRef = useRef<{ x: number; y: number } | null>(null)
   const initialScaleRef = useRef<number>(1.0)
+  const isPinchingRef = useRef(false)
+  const isTwistingRef = useRef(false)
 
   // Drag gesture for moving the ghost paper
+  // Disabled when pinch or twist is active to prevent conflicts
   useDrag(
     ({ xy: [x, y], dragging, first, last }) => {
       if (!enabled) return
+      
+      // Don't handle drag if pinch or twist is active (2-finger gesture)
+      if (isPinchingRef.current || isTwistingRef.current) return
       
       if (first) {
         // Store the initial pointer position
@@ -50,6 +56,7 @@ export function MobileGhostPaperGestures({
       enabled,
       preventDefault: true,
       filterTaps: true, // Filter out taps, only handle drags
+      threshold: 5, // Require 5px movement before considering it a drag
     }
   )
 
@@ -60,20 +67,25 @@ export function MobileGhostPaperGestures({
       
       if (first) {
         initialScaleRef.current = 1.0
+        isPinchingRef.current = true // Mark pinch as active
       }
       
-      // offset[0] is the accumulated scale from the start of the pinch
-      // Pass the accumulated scale to the handler
-      onPinchScale(scale)
+      // offset[0] is the accumulated scale from the start of the pinch (starts at 1.0)
+      // Reduce sensitivity by applying a damping factor
+      // Scale of 2.0 becomes 1.5, scale of 0.5 becomes 0.75, etc.
+      const dampedScale = 1.0 + (scale - 1.0) * 0.5 // 50% sensitivity
+      onPinchScale(dampedScale)
       
       if (last) {
         initialScaleRef.current = 1.0
+        isPinchingRef.current = false // Mark pinch as inactive
       }
     },
     {
       target: gl.domElement,
       enabled,
       preventDefault: true,
+      threshold: 0.05, // Require 5% scale change before triggering
     }
   )
 
@@ -82,14 +94,15 @@ export function MobileGhostPaperGestures({
     gl.domElement,
     {
       onTwistStart: () => {
-        // Twist started
+        isTwistingRef.current = true // Mark twist as active
       },
       onTwistMove: (rotation) => {
         if (!enabled || !onTwistRotate) return
-        onTwistRotate(rotation)
+        // Reduce rotation sensitivity
+        onTwistRotate(rotation * 0.5) // Apply 50% sensitivity
       },
       onTwistEnd: () => {
-        // Twist ended
+        isTwistingRef.current = false // Mark twist as inactive
       },
     },
     enabled && !!onTwistRotate
