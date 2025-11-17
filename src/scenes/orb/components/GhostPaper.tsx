@@ -240,11 +240,11 @@ export function GhostPaper({
         // Apply dark blue tint for ghost paper appearance (0.5 opacity overlay effect)
         // Multiply white by dark blue to create the tinted effect
         // material.color.copy(whiteColor).multiply(darkBlueTint)
-        material.opacity = 0.8
+        material.opacity = 1
       } else {
         material.map = null
         material.color.copy(placeholderColor)
-        material.opacity = 0.8
+        material.opacity = 1
       }
       material.needsUpdate = true
       lastTextureReadyRef.current = textureReady

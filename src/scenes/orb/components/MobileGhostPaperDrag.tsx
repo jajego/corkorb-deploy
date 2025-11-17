@@ -71,14 +71,16 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
       const dy = touch.clientY - touchStartPos.y
       const distance = Math.sqrt(dx * dx + dy * dy)
 
-      // If moved beyond threshold, this is a drag (not a tap)
+      // Always update pointer position to move ghost paper (even before threshold)
+      // This makes the ghost paper follow the finger immediately
+      onTouchMove(touch.clientX, touch.clientY)
+
+      // If moved beyond threshold, mark this as a drag (not a tap)
       if (distance > DRAG_THRESHOLD) {
         if (!isDraggingPaper) {
           isDraggingPaper = true
           onDragStateChange?.(true)
         }
-        // Update pointer to move ghost paper
-        onTouchMove(touch.clientX, touch.clientY)
       }
 
       // CRITICAL: Stop propagation to prevent pointer events from firing
@@ -90,26 +92,35 @@ export function MobileGhostPaperDrag({ enabled, onTouchMove, onDragStateChange }
 
     const handleTouchEnd = (event: TouchEvent) => {
       if (event.touches.length === 0) {
-        // If this was a tap (not a drag), we need to trigger the commit
-        // Since we prevented pointer events, we'll dispatch a synthetic pointer event
-        const wasTap = !isDraggingPaper && touchStartPos && (Date.now() - touchStartTime) < TAP_MAX_DURATION
+        // Check if this was a tap (not a drag)
+        // A tap is: not a drag AND within time threshold AND minimal movement
+        const timeSinceStart = Date.now() - touchStartTime
+        const wasTap = !isDraggingPaper && touchStartPos && timeSinceStart < TAP_MAX_DURATION
         
         if (wasTap && touchStartPos) {
-          // This was a tap - dispatch a pointer event to trigger commit
-          // Use the last known touch position (from touchstart or last touchmove)
-          // For a tap, this should be very close to touchstart position
-          const lastTouch = event.changedTouches[0] || (touchStartPos ? { clientX: touchStartPos.x, clientY: touchStartPos.y } : null)
-          
+          // Double-check: verify the touch didn't move much (safety check)
+          const lastTouch = event.changedTouches[0]
           if (lastTouch) {
-            const pointerEvent = new PointerEvent('pointerdown', {
-              pointerId: 1,
-              pointerType: 'touch',
-              clientX: lastTouch.clientX,
-              clientY: lastTouch.clientY,
-              bubbles: true,
-              cancelable: true,
-            })
-            canvasElement.dispatchEvent(pointerEvent)
+            const finalDx = lastTouch.clientX - touchStartPos.x
+            const finalDy = lastTouch.clientY - touchStartPos.y
+            const finalDistance = Math.sqrt(finalDx * finalDx + finalDy * finalDy)
+            
+            // Only commit if it was truly a tap (minimal movement)
+            if (finalDistance <= DRAG_THRESHOLD) {
+              // This was a tap - dispatch a pointer event to trigger commit
+              // Use a small delay to ensure all touch handlers have finished
+              setTimeout(() => {
+                const pointerEvent = new PointerEvent('pointerdown', {
+                  pointerId: 1,
+                  pointerType: 'touch',
+                  clientX: lastTouch.clientX,
+                  clientY: lastTouch.clientY,
+                  bubbles: true,
+                  cancelable: true,
+                })
+                canvasElement.dispatchEvent(pointerEvent)
+              }, 0)
+            }
           }
         }
         
