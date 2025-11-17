@@ -88,6 +88,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
   const [showAboutModal, setShowAboutModal] = useState(false)
   const isTouchDevice = useTouchDetection()
   const [isGhostPaperInteracting, setIsGhostPaperInteracting] = useState(false) // Track if ghost paper gestures are active
+  const isGestureActiveRef = useRef(false) // Track if any gesture is currently active (for preventing commits)
 
   // Optimistic paper tracking hooks
   const {
@@ -740,7 +741,14 @@ export function OrbScene({ orbId }: OrbSceneProps) {
 
   return (
     <div ref={dropZoneRef} className="orb-dropzone">
-      <Canvas camera={{ position: [0, 0, 3.5], fov: 50 }} style={{ width: '100vw', height: '100vh' }}>
+      <Canvas 
+        camera={{ position: [0, 0, 3.5], fov: 50 }} 
+        style={{ 
+          width: '100vw', 
+          height: '100vh',
+          touchAction: isTouchDevice ? 'none' : 'auto' // Prevent default touch behaviors on mobile
+        }}
+      >
         {/* <color attach="background-image" args={['/public/textures/skybox.jpg']} /> */}
         <CanvasCapture onCaptureReady={(captureFn) => { captureOrbRef.current = captureFn }} />
         <OrbLights />
@@ -755,6 +763,18 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           }}
           onPointerDown={(event) => {
             if (state.mode === ORB_MODE.Attach && pendingPaper?.stage === 'positioning') {
+              // On mobile, prevent tap-to-commit - only allow "Place Pin" button to commit
+              // Also prevent commit if a gesture is currently active
+              if (isTouchDevice && event.nativeEvent.pointerType === 'touch') {
+                // Don't commit on mobile touch - user must use "Place Pin" button
+                event.stopPropagation()
+                return
+              }
+              if (isGestureActiveRef.current) {
+                // Don't commit if a gesture is active (drag or pinch)
+                event.stopPropagation()
+                return
+              }
               confirmPaperPlacement(event)
               return
             }
@@ -875,8 +895,17 @@ export function OrbScene({ orbId }: OrbSceneProps) {
             enabled={attachActive && pendingPaper?.stage === 'positioning'}
             onDrag={handleMobileGhostPaperDrag}
             onPinchTransform={handleMobilePinchTransform}
-            onInteractionStart={() => setIsGhostPaperInteracting(true)}
-            onInteractionEnd={() => setIsGhostPaperInteracting(false)}
+            onInteractionStart={() => {
+              setIsGhostPaperInteracting(true)
+              isGestureActiveRef.current = true
+            }}
+            onInteractionEnd={() => {
+              setIsGhostPaperInteracting(false)
+              // Small delay to ensure gesture has fully ended before allowing commits
+              setTimeout(() => {
+                isGestureActiveRef.current = false
+              }, 100)
+            }}
           />
         )}
       </Canvas>

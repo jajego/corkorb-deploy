@@ -31,8 +31,14 @@ export function MobileGhostPaperGestures({
   // Single-finger drag for positioning the ghost paper
   // Disabled when pinch is active to prevent conflicts
   useDrag(
-    ({ xy: [x, y], dragging, first, last }) => {
+    ({ xy: [x, y], dragging, first, last, tap }) => {
       if (!enabled || isPinchingRef.current) return
+      
+      // If it's a tap (quick touch without movement), don't start interaction
+      // This prevents accidental commits from quick taps
+      if (tap) {
+        return
+      }
       
       if (first) {
         onInteractionStart?.()
