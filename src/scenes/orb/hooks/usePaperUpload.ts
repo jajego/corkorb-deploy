@@ -31,7 +31,8 @@ export function usePaperUpload({
   const { isSignedIn, userId } = useAuth()
 
   const handleFileSelection = useCallback(
-    async (file: File) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async (file: File, _pointerX?: number, _pointerY?: number) => {
       // Check if user is signed in before allowing file upload
       if (!isSignedIn) {
         onError('You must create an account to pin images.')

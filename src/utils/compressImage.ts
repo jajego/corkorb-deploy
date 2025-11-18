@@ -194,7 +194,7 @@ export async function compressImage(
       : (isVeryLargeFile ? JPEG_QUALITY_VERY_LARGE : isLargeFile ? JPEG_QUALITY_LARGE : JPEG_QUALITY)
 
     const MAX_TARGET_SIZE = 4.5 * 1024 * 1024 // 4.5MB target (leave some margin under 5MB limit)
-    let blob: Blob
+    let blob: Blob | null = null
     let attempts = 0
     const maxAttempts = 3
 
@@ -227,6 +227,11 @@ export async function compressImage(
       } else {
         break // Can't reduce quality for PNG/GIF or out of attempts
       }
+    }
+
+    // TypeScript guard: blob should always be assigned by this point (loop always executes at least once)
+    if (!blob) {
+      throw new Error('Failed to compress image: blob is null')
     }
 
     const compressedSize = blob.size
