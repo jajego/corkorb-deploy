@@ -97,7 +97,38 @@ async def create_paper(session: AsyncSession, orb_id: str, data: PaperCreate) ->
       if count >= orb.max_papers:
         oldest = await paper_repo.get_oldest_paper_for_orb(session, orb_id)
         if oldest:
+          # Delete from S3 if paper was uploaded
+          if oldest.uploaded:
+            import re
+            from urllib.parse import urlparse
+            from app.services import s3 as s3_service
+            
+            # Extract file extension from source_url
+            file_extension = "jpg"  # default
+            if oldest.source_url:
+              if oldest.source_url.startswith("data:"):
+                match = re.search(r"data:image/(\w+);", oldest.source_url)
+                if match:
+                  ext = match.group(1).lower()
+                  ext_map = {"jpeg": "jpg", "jpg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
+                  file_extension = ext_map.get(ext, "jpg")
+              else:
+                parsed = urlparse(oldest.source_url)
+                path = parsed.path
+                if "." in path:
+                  file_extension = path.split(".")[-1].lower()
+            
+            # Delete from S3
+            try:
+              await s3_service.delete_image(oldest.orb_id, oldest.id, file_extension)
+              logger.info(f"Evicted paper {oldest.id}: deleted image from S3")
+            except Exception as e:
+              logger.warning(f"Failed to delete evicted paper image from S3: {e}")
+              # Continue with database deletion even if S3 deletion fails
+          
+          # Delete from database
           await paper_repo.delete_paper(session, oldest.id)
+          logger.info(f"Evicted oldest paper {oldest.id} to make room for new paper")
   else:
     # Fallback to row-level locking (single-instance)
     orb = await orb_repo.get_orb_by_id(session, orb_id, lock=True)
@@ -110,7 +141,38 @@ async def create_paper(session: AsyncSession, orb_id: str, data: PaperCreate) ->
     if count >= orb.max_papers:
       oldest = await paper_repo.get_oldest_paper_for_orb(session, orb_id)
       if oldest:
+        # Delete from S3 if paper was uploaded
+        if oldest.uploaded:
+          import re
+          from urllib.parse import urlparse
+          from app.services import s3 as s3_service
+          
+          # Extract file extension from source_url
+          file_extension = "jpg"  # default
+          if oldest.source_url:
+            if oldest.source_url.startswith("data:"):
+              match = re.search(r"data:image/(\w+);", oldest.source_url)
+              if match:
+                ext = match.group(1).lower()
+                ext_map = {"jpeg": "jpg", "jpg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
+                file_extension = ext_map.get(ext, "jpg")
+            else:
+              parsed = urlparse(oldest.source_url)
+              path = parsed.path
+              if "." in path:
+                file_extension = path.split(".")[-1].lower()
+          
+          # Delete from S3
+          try:
+            await s3_service.delete_image(oldest.orb_id, oldest.id, file_extension)
+            logger.info(f"Evicted paper {oldest.id}: deleted image from S3")
+          except Exception as e:
+            logger.warning(f"Failed to delete evicted paper image from S3: {e}")
+            # Continue with database deletion even if S3 deletion fails
+        
+        # Delete from database
         await paper_repo.delete_paper(session, oldest.id)
+        logger.info(f"Evicted oldest paper {oldest.id} to make room for new paper")
 
   # Prepare data dict for storage
   data_dict: Optional[Dict] = None
