@@ -24,11 +24,11 @@ const MAX_DIMENSION = 2048
 
 // Compression quality settings
 // Lower quality = smaller files, but we want good visual quality
-// For large files (>2MB), we'll reduce quality more aggressively to ensure <5MB
+// For large files (>2MB), we'll reduce quality more aggressively to ensure <10MB
 const JPEG_QUALITY = 0.85 // 85% quality (good balance between size and quality)
 const WEBP_QUALITY = 0.85 // 85% quality (WebP compresses better at same quality)
 
-// Quality for large files (aggressive compression to ensure <5MB)
+// Quality for large files (aggressive compression to ensure <10MB)
 const JPEG_QUALITY_LARGE = 0.75 // 75% quality for large files
 const WEBP_QUALITY_LARGE = 0.75 // 75% quality for large files
 
@@ -182,7 +182,7 @@ export async function compressImage(
     const extension = getFileExtension(outputMimeType)
 
     // Compress to Blob with progressive quality reduction if needed
-    // Use more aggressive compression for large files to ensure they fit under 5MB limit
+    // Use more aggressive compression for large files to ensure they fit under 10MB limit
     const isVeryLargeFile = originalSize > 5 * 1024 * 1024 // >5MB original
     const isLargeFile = originalSize > 2 * 1024 * 1024 // >2MB original
     
@@ -193,7 +193,7 @@ export async function compressImage(
       ? (isVeryLargeFile ? WEBP_QUALITY_VERY_LARGE : isLargeFile ? WEBP_QUALITY_LARGE : WEBP_QUALITY)
       : (isVeryLargeFile ? JPEG_QUALITY_VERY_LARGE : isLargeFile ? JPEG_QUALITY_LARGE : JPEG_QUALITY)
 
-    const MAX_TARGET_SIZE = 4.5 * 1024 * 1024 // 4.5MB target (leave some margin under 5MB limit)
+    const MAX_TARGET_SIZE = 9 * 1024 * 1024 // 9MB target (leave some margin under 10MB limit)
     let blob: Blob | null = null
     let attempts = 0
     const maxAttempts = 3
