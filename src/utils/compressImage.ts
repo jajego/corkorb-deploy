@@ -24,13 +24,17 @@ const MAX_DIMENSION = 2048
 
 // Compression quality settings
 // Lower quality = smaller files, but we want good visual quality
-// For large files (>1MB), we'll reduce quality more aggressively
-const JPEG_QUALITY = 0.80 // 80% quality (good balance between size and quality)
-const WEBP_QUALITY = 0.80 // 80% quality (WebP compresses better at same quality)
+// For large files (>2MB), we'll reduce quality more aggressively to ensure <5MB
+const JPEG_QUALITY = 0.85 // 85% quality (good balance between size and quality)
+const WEBP_QUALITY = 0.85 // 85% quality (WebP compresses better at same quality)
 
-// Quality for large files (aggressive compression to ensure <2.5MB)
-const JPEG_QUALITY_LARGE = 0.70 // 70% quality for large files
-const WEBP_QUALITY_LARGE = 0.70 // 70% quality for large files
+// Quality for large files (aggressive compression to ensure <5MB)
+const JPEG_QUALITY_LARGE = 0.75 // 75% quality for large files
+const WEBP_QUALITY_LARGE = 0.75 // 75% quality for large files
+
+// Quality for very large files (>5MB original) - more aggressive compression
+const JPEG_QUALITY_VERY_LARGE = 0.65 // 65% quality for very large files
+const WEBP_QUALITY_VERY_LARGE = 0.65 // 65% quality for very large files
 
 // WebP support detection
 let webpSupported: boolean | null = null
@@ -177,28 +181,53 @@ export async function compressImage(
     const outputMimeType = await getOutputMimeType(file)
     const extension = getFileExtension(outputMimeType)
 
-    // Compress to Blob
-    // Use more aggressive compression for large files to ensure they fit under the limit
-    const isLargeFile = originalSize > 1 * 1024 * 1024 // >1MB
-    const quality = outputMimeType === 'image/png' || outputMimeType === 'image/gif' 
+    // Compress to Blob with progressive quality reduction if needed
+    // Use more aggressive compression for large files to ensure they fit under 5MB limit
+    const isVeryLargeFile = originalSize > 5 * 1024 * 1024 // >5MB original
+    const isLargeFile = originalSize > 2 * 1024 * 1024 // >2MB original
+    
+    // Start with appropriate quality based on file size
+    let quality = outputMimeType === 'image/png' || outputMimeType === 'image/gif' 
       ? undefined 
       : outputMimeType === 'image/webp' 
-      ? (isLargeFile ? WEBP_QUALITY_LARGE : WEBP_QUALITY)
-      : (isLargeFile ? JPEG_QUALITY_LARGE : JPEG_QUALITY)
+      ? (isVeryLargeFile ? WEBP_QUALITY_VERY_LARGE : isLargeFile ? WEBP_QUALITY_LARGE : WEBP_QUALITY)
+      : (isVeryLargeFile ? JPEG_QUALITY_VERY_LARGE : isLargeFile ? JPEG_QUALITY_LARGE : JPEG_QUALITY)
 
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error('Failed to compress image to Blob'))
-            return
-          }
-          resolve(blob)
-        },
-        outputMimeType,
-        quality // undefined for PNG/GIF, quality value for JPEG/WebP
-      )
-    })
+    const MAX_TARGET_SIZE = 4.5 * 1024 * 1024 // 4.5MB target (leave some margin under 5MB limit)
+    let blob: Blob
+    let attempts = 0
+    const maxAttempts = 3
+
+    // Progressive compression: reduce quality if file is still too large
+    while (attempts < maxAttempts) {
+      blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (result) => {
+            if (!result) {
+              reject(new Error('Failed to compress image to Blob'))
+              return
+            }
+            resolve(result)
+          },
+          outputMimeType,
+          quality // undefined for PNG/GIF, quality value for JPEG/WebP
+        )
+      })
+
+      // If file is small enough or we can't compress further (PNG/GIF), we're done
+      if (blob.size <= MAX_TARGET_SIZE || quality === undefined) {
+        break
+      }
+
+      // Reduce quality further and try again (only if we have more attempts)
+      attempts++
+      if (attempts < maxAttempts && typeof quality === 'number') {
+        quality = Math.max(0.5, quality - 0.1) // Reduce by 10%, minimum 50%
+        logger.debug(`Compression attempt ${attempts}: file still too large (${(blob.size / 1024 / 1024).toFixed(2)}MB), reducing quality to ${(quality * 100).toFixed(0)}%`)
+      } else {
+        break // Can't reduce quality for PNG/GIF or out of attempts
+      }
+    }
 
     const compressedSize = blob.size
     const compressionRatio = compressedSize / originalSize

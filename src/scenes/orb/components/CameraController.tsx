@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { ORB_EVENT } from '../../../three/constants/events'
 import { usePinchGesture } from '../hooks/usePinchGesture'
 
-const ROTATE_SENSITIVITY = 0.002
+const ROTATE_SENSITIVITY = 0.003
 const DAMPING = 0.92
 const EPS = 0.001
 const MIN_PHI = EPS

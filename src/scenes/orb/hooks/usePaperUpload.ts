@@ -11,8 +11,8 @@ import type { PendingPaper } from '../../../types/orb'
 
 const logger = createLogger('PaperUpload')
 
-const MAX_UPLOAD_SIZE = 2.5 * 1024 * 1024 // 2.5MB
-const MAX_ORIGINAL_SIZE = 10 * 1024 * 1024 // 10MB
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024 // 5MB
+const MAX_ORIGINAL_SIZE = 20 * 1024 * 1024 // 20MB (allow larger originals since we compress)
 
 interface UsePaperUploadOptions {
   onFileSelected: (pendingPaper: PendingPaper) => void
@@ -31,7 +31,7 @@ export function usePaperUpload({
   const { isSignedIn, userId } = useAuth()
 
   const handleFileSelection = useCallback(
-    async (file: File, _pointerX?: number, _pointerY?: number) => {
+    async (file: File) => {
       // Check if user is signed in before allowing file upload
       if (!isSignedIn) {
         onError('You must create an account to pin images.')
@@ -67,7 +67,7 @@ export function usePaperUpload({
           `Image compressed: ${(compressed.originalSize / 1024).toFixed(2)}KB -> ${(compressed.compressedSize / 1024).toFixed(2)}KB (${((1 - compressed.compressionRatio) * 100).toFixed(1)}% reduction)`
         )
 
-        // Check compressed file size (backend limit: 2.5MB)
+        // Check compressed file size (backend limit: 5MB)
         if (compressed.compressedSize > MAX_UPLOAD_SIZE) {
           logger.error(
             `Compressed file size (${(compressed.compressedSize / 1024 / 1024).toFixed(2)}MB) exceeds maximum (${MAX_UPLOAD_SIZE / 1024 / 1024}MB). Original: ${(compressed.originalSize / 1024 / 1024).toFixed(2)}MB`

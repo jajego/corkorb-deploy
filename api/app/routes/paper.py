@@ -20,9 +20,9 @@ from app.ws.orb import connection_manager
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Maximum file size: 2.5MB (increased to account for compression edge cases)
+# Maximum file size: 5MB (increased to support iPhone photos and other high-quality images)
 # Client-side compression typically reduces file size, but some images may compress poorly
-MAX_FILE_SIZE = 2.5 * 1024 * 1024
+MAX_FILE_SIZE = 5 * 1024 * 1024
 
 # Allowed image MIME types
 ALLOWED_MIME_TYPES = {
