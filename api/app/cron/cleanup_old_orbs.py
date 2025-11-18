@@ -4,6 +4,12 @@ Cron job script to delete orbs that haven't been accessed in 2 weeks.
 This script should be run daily (e.g., at 3 AM UTC) via Railway's cron job feature.
 It finds all orbs where last_accessed is older than 14 days and deletes them,
 including all associated papers and S3 images.
+
+Usage:
+    python -m app.cron.cleanup_old_orbs
+
+Or from the api directory:
+    python -m app.cron.cleanup_old_orbs
 """
 
 import asyncio
