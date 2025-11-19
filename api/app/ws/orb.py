@@ -142,10 +142,18 @@ async def orb_websocket(websocket: WebSocket, orb_id: str):
       all_users_after_join = connection_manager.get_users_in_orb(orb_id)
       connected_count = len(all_users_after_join)
       anonymous_count = sum(1 for uid in all_users_after_join if uid.startswith('user:anonymous:'))
+      # Get usernames for non-anonymous users
+      usernames = []
+      for user_id in all_users_after_join:
+        if not user_id.startswith('user:anonymous:'):
+          username = connection_manager.get_username_by_user_id(user_id)
+          if username:
+            usernames.append(username)
       count_message = ConnectedUsersCountMessage(
         orb_id=orb_id,
         connected_users_count=connected_count,
-        anonymous_users_count=anonymous_count
+        anonymous_users_count=anonymous_count,
+        usernames=usernames
       )
       await connection_manager.broadcast_to_orb(orb_id, count_message.model_dump())
       logger.info(f"[USER_COUNT] Broadcast updated count: {connected_count} total ({anonymous_count} anonymous) for orb {orb_id}")
@@ -308,10 +316,18 @@ async def orb_websocket(websocket: WebSocket, orb_id: str):
       all_users_after_leave = connection_manager.get_users_in_orb(disconnected_orb_id)
       connected_count = len(all_users_after_leave)
       anonymous_count = sum(1 for uid in all_users_after_leave if uid.startswith('user:anonymous:'))
+      # Get usernames for non-anonymous users
+      usernames = []
+      for user_id in all_users_after_leave:
+        if not user_id.startswith('user:anonymous:'):
+          username = connection_manager.get_username_by_user_id(user_id)
+          if username:
+            usernames.append(username)
       count_message = ConnectedUsersCountMessage(
         orb_id=disconnected_orb_id,
         connected_users_count=connected_count,
-        anonymous_users_count=anonymous_count
+        anonymous_users_count=anonymous_count,
+        usernames=usernames
       )
       await connection_manager.broadcast_to_orb(disconnected_orb_id, count_message.model_dump())
       logger.info(f"[USER_COUNT] Broadcast updated count: {connected_count} total ({anonymous_count} anonymous) for orb {disconnected_orb_id}")

@@ -108,6 +108,7 @@ class StateMessage(WSMessage):
   papers: list[Dict[str, Any]] = Field(default_factory=list)
   connected_users_count: int = Field(default=0, description="Number of connected users")
   anonymous_users_count: int = Field(default=0, description="Number of anonymous users")
+  usernames: list[str] = Field(default_factory=list, description="List of usernames of connected users (excluding anonymous)")
 
 
 class UserJoinedMessage(WSMessage):
@@ -153,6 +154,7 @@ class ConnectedUsersCountMessage(WSMessage):
   orb_id: str
   connected_users_count: int = Field(..., description="Total number of connected users")
   anonymous_users_count: int = Field(..., description="Number of anonymous users")
+  usernames: list[str] = Field(default_factory=list, description="List of usernames of connected users (excluding anonymous)")
 
 
 # Union type for client messages (excluding ping/pong which are handled separately)

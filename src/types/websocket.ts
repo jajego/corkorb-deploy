@@ -23,6 +23,7 @@ export interface StateMessage extends WebSocketMessageBase {
   papers: ServerPaper[]
   connected_users_count?: number
   anonymous_users_count?: number
+  usernames?: string[]
 }
 
 export interface PaperCreatedMessage extends WebSocketMessageBase {
@@ -80,6 +81,7 @@ export interface ConnectedUsersCountMessage extends WebSocketMessageBase {
   orb_id: string
   connected_users_count: number
   anonymous_users_count: number
+  usernames: string[]
 }
 
 export interface PingMessage {

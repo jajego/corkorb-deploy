@@ -1,8 +1,9 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 interface OrbDebugHudProps {
   connectedUsersCount: number
+  connectedUsernames: string[]
   wsStatus: string
   cameraDeltaThetaDeg: string
   cameraDeltaPhiDeg: string
@@ -38,6 +39,8 @@ export function OrbDebugHud({
   onUploadPhoto,
   orbId,
   connectedUsersCount,
+  connectedUsernames,
+  wsStatus,
   isSignedIn,
   username,
   onSignOut,
@@ -48,6 +51,7 @@ export function OrbDebugHud({
 }: OrbDebugHudProps) {
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showUsernames, setShowUsernames] = useState(false)
 
   const handleUploadClick = () => {
     fileInputRef.current?.click()
@@ -96,11 +100,45 @@ export function OrbDebugHud({
         </strong>
         <strong>|</strong>
         <div className="info-line">
-          <strong>Connected</strong>{' '}
-          <span style={{ marginLeft: '4px' }}>
-            {connectedUsersCount} {connectedUsersCount === 1 ? 'user' : 'users'}
-            {anonymousUsersCount > 0 && <> ({anonymousUsersCount} anonymous)</>}
-          </span>
+          {wsStatus === 'connected' ? (
+            <>
+              <strong>Connected</strong>{' '}
+              <span
+                style={{
+                  marginLeft: '4px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+                onClick={() => setShowUsernames(!showUsernames)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.fontWeight = '600'
+                  e.currentTarget.style.textDecoration = 'underline'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.fontWeight = '400'
+                  e.currentTarget.style.textDecoration = 'none'
+                }}
+              >
+                {showUsernames ? (
+                  <>
+                    {connectedUsernames.length > 0 ? (
+                      connectedUsernames.join(', ')
+                    ) : (
+                      'No users'
+                    )}
+                    {anonymousUsersCount > 0 && <> ({anonymousUsersCount} anonymous)</>}
+                  </>
+                ) : (
+                  <>
+                    {connectedUsersCount} {connectedUsersCount === 1 ? 'user' : 'users'}
+                    {anonymousUsersCount > 0 && <> ({anonymousUsersCount} anonymous)</>}
+                  </>
+                )}
+              </span>
+            </>
+          ) : (
+            <span>Connecting...</span>
+          )}
         </div>
         <label>
           <strong>|</strong>

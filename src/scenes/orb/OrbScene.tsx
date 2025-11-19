@@ -212,6 +212,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     status: wsStatus,
     connectedUsersCount,
     anonymousUsersCount,
+    connectedUsernames,
     sendMessage,
     // @ts-ignore
   } = useOrbWebSocket({
@@ -819,6 +820,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
       )} */}
       <OrbDebugHud
         connectedUsersCount={connectedUsersCount}
+        connectedUsernames={connectedUsernames}
         wsStatus={wsStatus}
         cameraDeltaThetaDeg={cameraDeltaThetaDeg}
         cameraDeltaPhiDeg={cameraDeltaPhiDeg}

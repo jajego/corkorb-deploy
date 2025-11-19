@@ -154,6 +154,13 @@ async def handle_get_state(
     all_users = connection_manager.get_users_in_orb(message.orb_id)
     connected_count = len(all_users)
     anonymous_count = sum(1 for uid in all_users if uid.startswith('user:anonymous:'))
+    # Get usernames for non-anonymous users
+    usernames = []
+    for user_id in all_users:
+      if not user_id.startswith('user:anonymous:'):
+        username = connection_manager.get_username_by_user_id(user_id)
+        if username:
+          usernames.append(username)
     
     await session.commit()
     
@@ -161,7 +168,8 @@ async def handle_get_state(
       orb_id=message.orb_id, 
       papers=papers_data,
       connected_users_count=connected_count,
-      anonymous_users_count=anonymous_count
+      anonymous_users_count=anonymous_count,
+      usernames=usernames
     )
     return response
   except AuthorizationError as e:

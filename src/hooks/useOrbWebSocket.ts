@@ -49,6 +49,7 @@ export function useOrbWebSocket({
   const [status, setStatus] = useState<WebSocketStatus>('disconnected')
   const [connectedUsersCount, setConnectedUsersCount] = useState<number>(0)
   const [anonymousUsersCount, setAnonymousUsersCount] = useState<number>(0)
+  const [connectedUsernames, setConnectedUsernames] = useState<string[]>([])
   const wsRef = useRef<WebSocket | null>(null)
   const currentUserIdRef = useRef<string | null>(null) // Track current user's ID (still needed for filtering own user_joined messages)
   const reconnectTimeoutRef = useRef<number | null>(null)
@@ -203,6 +204,9 @@ export function useOrbWebSocket({
               if (typeof stateMessage.anonymous_users_count === 'number') {
                 setAnonymousUsersCount(stateMessage.anonymous_users_count)
               }
+              if (Array.isArray(stateMessage.usernames)) {
+                setConnectedUsernames(stateMessage.usernames)
+              }
               
               callbacks.onState?.(stateMessage.papers || [])
               break
@@ -213,6 +217,7 @@ export function useOrbWebSocket({
               const countMessage = message as import('../types/websocket').ConnectedUsersCountMessage
               setConnectedUsersCount(countMessage.connected_users_count)
               setAnonymousUsersCount(countMessage.anonymous_users_count)
+              setConnectedUsernames(countMessage.usernames || [])
               break
             }
 
@@ -521,6 +526,7 @@ export function useOrbWebSocket({
       // Reset counts when disconnecting
       setConnectedUsersCount(0)
       setAnonymousUsersCount(0)
+      setConnectedUsernames([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orbId, enabled, username]) // connect and disconnect are stable (memoized), so we don't need them in deps
@@ -529,6 +535,7 @@ export function useOrbWebSocket({
     status,
     connectedUsersCount,
     anonymousUsersCount,
+    connectedUsernames,
     sendMessage,
     connect,
     disconnect,
