@@ -84,8 +84,13 @@ def create_app() -> FastAPI:
   # Startup: Start Redis pub/sub subscriber for cross-instance broadcasting
   @app.on_event("startup")
   async def startup_event():
-    await start_redis_subscriber(orb_ws.connection_manager)
-    logger.info("Application startup complete")
+    try:
+      await start_redis_subscriber(orb_ws.connection_manager)
+      logger.info("Application startup complete")
+    except Exception as e:
+      logger.error(f"Error during application startup: {e}", exc_info=True)
+      # Don't raise - allow app to start even if Redis subscriber fails
+      # The subscriber will retry automatically
 
   # Shutdown: Stop Redis pub/sub subscriber
   @app.on_event("shutdown")

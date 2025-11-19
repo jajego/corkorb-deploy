@@ -233,6 +233,7 @@ async def _redis_subscriber_loop(connection_manager: ConnectionManager):
       
       # Create a separate Redis client for pub/sub (required by redis-py)
       # Pub/sub connections need to be dedicated
+      # Note: socket_timeout should be None or very high for pub/sub (blocking reads)
       import redis.asyncio as redis
       from app.config import get_settings
       settings = get_settings()
@@ -242,7 +243,8 @@ async def _redis_subscriber_loop(connection_manager: ConnectionManager):
         encoding="utf-8",
         decode_responses=True,
         socket_connect_timeout=1,
-        socket_timeout=1,
+        socket_timeout=None,  # No timeout for pub/sub (blocking reads)
+        health_check_interval=30,
       )
       
       # Test connection
