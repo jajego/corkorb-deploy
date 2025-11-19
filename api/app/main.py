@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .routes import health, orb, paper
 from .ws import orb as orb_ws
+from .ws.connection_manager import start_redis_subscriber, stop_redis_subscriber
 
 # Configure logging
 logging.basicConfig(
@@ -79,6 +80,18 @@ def create_app() -> FastAPI:
   app.include_router(orb.router, prefix="/api", tags=["orbs"])
   app.include_router(paper.router, prefix="/api", tags=["papers"])
   app.include_router(orb_ws.router)
+
+  # Startup: Start Redis pub/sub subscriber for cross-instance broadcasting
+  @app.on_event("startup")
+  async def startup_event():
+    await start_redis_subscriber(orb_ws.connection_manager)
+    logger.info("Application startup complete")
+
+  # Shutdown: Stop Redis pub/sub subscriber
+  @app.on_event("shutdown")
+  async def shutdown_event():
+    await stop_redis_subscriber()
+    logger.info("Application shutdown complete")
 
   logger.info("FastAPI app created successfully")
   return app
