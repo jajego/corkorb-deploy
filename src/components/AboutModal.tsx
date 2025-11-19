@@ -1,9 +1,24 @@
+import { createPortal } from 'react-dom'
+import { useEffect } from 'react'
+
 type AboutModalProps = {
   isOpen: boolean
   onClose: () => void
 }
 
 export function AboutModal({ isOpen, onClose }: AboutModalProps) {
+  // Add/remove class to body to hide tooltips when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.classList.add('about-modal-open')
+    } else {
+      document.body.classList.remove('about-modal-open')
+    }
+    return () => {
+      document.body.classList.remove('about-modal-open')
+    }
+  }, [isOpen])
+
   if (!isOpen) return null
 
   const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -12,7 +27,8 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
     }
   }
 
-  return (
+  // Use portal to render at body level, ensuring it's after drei's portals in DOM
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -24,7 +40,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1000,
+        zIndex: 10000,
         padding: '20px',
       }}
       onClick={handleBackdropClick}
@@ -215,7 +231,8 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
