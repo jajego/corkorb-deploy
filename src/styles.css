@@ -177,7 +177,8 @@ body,
 }
 
 /* Hide tooltips when about modal is open (prevents stacking context issues) */
-body.about-modal-open .pin-tooltip {
+body.about-modal-open .pin-tooltip,
+body.delete-paper-modal-open .pin-tooltip {
   display: none !important;
 }
 

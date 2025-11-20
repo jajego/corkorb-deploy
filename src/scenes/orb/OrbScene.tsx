@@ -20,6 +20,7 @@ import { useOrbWebSocket } from '../../hooks/useOrbWebSocket'
 import type { PendingPaper, PlacedPaper } from '../../types/orb'
 import { ToastContainer, useToast } from '../../components/ToastContainer'
 import { AboutModal } from '../../components/AboutModal'
+import { DeletePaperModal } from '../../components/DeletePaperModal'
 import {
   vectorToLatLon,
   formatDegrees,
@@ -84,6 +85,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
   const ghostGeometryRef = useRef<{ positions: Float32Array; normals: Float32Array } | null>(null)
   const pointerOverrideRef = useRef<{ x: number; y: number } | null>(null)
   const [showAboutModal, setShowAboutModal] = useState(false)
+  const [paperPendingDeletion, setPaperPendingDeletion] = useState<PlacedPaper | null>(null)
 
   // Optimistic paper tracking hooks
   const {
@@ -769,7 +771,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
               createdAt={paper.createdAt}
               showTooltip={showAllTooltips}
               onPinHoverChange={handlePinHoverChange}
-              onRemove={() => handleRemove(paper)}
+              onRemove={() => setPaperPendingDeletion(paper)}
               canDelete={isSignedIn}
             />
         ))}
@@ -846,6 +848,20 @@ export function OrbScene({ orbId }: OrbSceneProps) {
         onShowAbout={() => setShowAboutModal(true)}
       />
       <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
+      <DeletePaperModal
+        isOpen={paperPendingDeletion !== null}
+        imageUrl={paperPendingDeletion?.sourceUrl || null}
+        username={paperPendingDeletion?.username}
+        userId={paperPendingDeletion?.userId}
+        createdAt={paperPendingDeletion?.createdAt}
+        onConfirm={() => {
+          if (paperPendingDeletion) {
+            handleRemove(paperPendingDeletion)
+            setPaperPendingDeletion(null)
+          }
+        }}
+        onCancel={() => setPaperPendingDeletion(null)}
+      />
       {orbExists === false && (
         <div style={{
           position: 'fixed',
