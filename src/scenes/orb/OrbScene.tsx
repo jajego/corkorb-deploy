@@ -860,40 +860,74 @@ export function OrbScene({ orbId }: OrbSceneProps) {
             // This handles optimistic -> real paper replacement correctly
             const currentPapers = placedPapersRef.current.length > 0 ? placedPapersRef.current : placedPapers
             
+            console.log('[DeleteModal] Starting paper lookup:', {
+              pendingId: paperPendingDeletion.id,
+              isOptimistic: paperPendingDeletion.id.startsWith('optimistic-'),
+              sourceUrl: paperPendingDeletion.sourceUrl,
+              currentPapersCount: currentPapers.length,
+              currentPaperIds: currentPapers.map(p => p.id),
+              optimisticMappings: Array.from(optimisticPapersByIdRef.current.entries()),
+            })
+            
             // Try to find the paper by ID first (works for both optimistic and real papers)
             let currentPaper = currentPapers.find((p) => p.id === paperPendingDeletion.id)
             
             // If not found and it's an optimistic ID, try to find the real paper that replaced it
             if (!currentPaper && paperPendingDeletion.id.startsWith('optimistic-')) {
+              console.log('[DeleteModal] Optimistic paper not found, checking mappings...')
               // Check optimistic mapping: realPaperId -> optimisticId
               for (const [realPaperId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
                 if (optimisticId === paperPendingDeletion.id) {
+                  console.log(`[DeleteModal] Found mapping: ${realPaperId} -> ${optimisticId}, looking for real paper...`)
                   currentPaper = currentPapers.find((p) => p.id === realPaperId)
-                  if (currentPaper) break
+                  if (currentPaper) {
+                    console.log(`[DeleteModal] Found real paper: ${currentPaper.id}`)
+                    break
+                  }
                 }
               }
-              // Fallback: match by sourceUrl
+              // Fallback: match by sourceUrl (most reliable for production race conditions)
               if (!currentPaper && paperPendingDeletion.sourceUrl) {
+                console.log('[DeleteModal] Trying sourceUrl fallback...')
                 currentPaper = currentPapers.find(
                   (p) => !p.id.startsWith('optimistic-') && p.sourceUrl === paperPendingDeletion.sourceUrl
                 )
+                if (currentPaper) {
+                  console.log(`[DeleteModal] Found paper by sourceUrl: ${currentPaper.id}`)
+                }
+              }
+            }
+            
+            // Also try reverse lookup: if paperPendingDeletion is a real ID, check if there's an optimistic version
+            if (!currentPaper && !paperPendingDeletion.id.startsWith('optimistic-')) {
+              // Check if this real paper ID maps to an optimistic ID that might still be in state
+              const optimisticId = optimisticPapersByIdRef.current.get(paperPendingDeletion.id)
+              if (optimisticId) {
+                console.log(`[DeleteModal] Real paper ${paperPendingDeletion.id} maps to optimistic ${optimisticId}, checking state...`)
+                currentPaper = currentPapers.find((p) => p.id === paperPendingDeletion.id || p.id === optimisticId)
+                if (currentPaper) {
+                  console.log(`[DeleteModal] Found paper (real or optimistic): ${currentPaper.id}`)
+                }
               }
             }
             
             // Only proceed if we found the paper in current state
             // This ensures handleRemove will find it and send the WS message
             if (currentPaper) {
+              console.log(`[DeleteModal] Calling handleRemove with paper: ${currentPaper.id}`)
               handleRemove(currentPaper)
             } else {
               // Paper not found - this shouldn't happen, but log details for debugging
-              console.warn(
-                `Paper not found in state for deletion: ${paperPendingDeletion.id} ` +
+              console.error(
+                `[DeleteModal] Paper not found in state for deletion: ${paperPendingDeletion.id} ` +
                 `(optimistic: ${paperPendingDeletion.id.startsWith('optimistic-')}), ` +
                 `currentPapers count: ${currentPapers.length}, ` +
                 `paper IDs: ${currentPapers.map(p => p.id).join(', ')}, ` +
-                `sourceUrl: ${paperPendingDeletion.sourceUrl}`
+                `sourceUrl: ${paperPendingDeletion.sourceUrl}, ` +
+                `optimisticMappings: ${JSON.stringify(Array.from(optimisticPapersByIdRef.current.entries()))}`
               )
               // Still try with stored paper - handleRemove will handle the lookup
+              console.log('[DeleteModal] Falling back to handleRemove with original paperPendingDeletion')
               handleRemove(paperPendingDeletion)
             }
             setPaperPendingDeletion(null)

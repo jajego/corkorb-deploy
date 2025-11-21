@@ -141,47 +141,92 @@ export function usePaperDeletion({
         }
 
         // Check if this is an optimistic paper
-        if (paperToDelete.id.startsWith('optimistic-')) {
-          logger.info(`Deleting optimistic paper: ${paperToDelete.id}`)
+        if (paperToDelete && paperToDelete.id.startsWith('optimistic-')) {
+          const originalOptimisticPaper = paperToDelete
+          logger.info(`[handleRemove] Deleting optimistic paper: ${originalOptimisticPaper.id}`)
 
-          // Mark this source URL as optimistically deleted
-          optimisticallyDeletedSourceUrlsRef.current.add(paperToDelete.sourceUrl)
-          // Remove from optimistic papers tracking
-          optimisticPapersRef.current.delete(paperToDelete.sourceUrl)
-          // Also clean up paper ID mapping if it exists
-          for (const [realPaperId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
-            if (optimisticId === paperToDelete.id) {
-              optimisticPapersByIdRef.current.delete(realPaperId)
+          // CRITICAL: Check if the real paper has already arrived and replaced this optimistic one
+          // This is especially important in production where WebSocket messages can arrive quickly
+          let realPaperId: string | undefined
+          for (const [realId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
+            if (optimisticId === originalOptimisticPaper.id) {
+              realPaperId = realId
+              logger.info(`[handleRemove] Found real paper ${realPaperId} that replaced optimistic ${originalOptimisticPaper.id}`)
               break
             }
           }
+          
+          // Also check by sourceUrl for real papers that might have replaced this optimistic one
+          if (!realPaperId && originalOptimisticPaper.sourceUrl) {
+            const realPaperBySourceUrl = latestPapers.find(
+              (p) => !p.id.startsWith('optimistic-') && p.sourceUrl === originalOptimisticPaper.sourceUrl
+            ) || currentPapers.find(
+              (p) => !p.id.startsWith('optimistic-') && p.sourceUrl === originalOptimisticPaper.sourceUrl
+            )
+            if (realPaperBySourceUrl) {
+              realPaperId = realPaperBySourceUrl.id
+              logger.info(`[handleRemove] Found real paper ${realPaperId} by sourceUrl that replaced optimistic ${originalOptimisticPaper.id}`)
+            }
+          }
 
-          // Remove optimistic paper immediately from UI
-          // Also remove any real paper that replaced it (defensive cleanup)
-          const filtered = currentPapers.filter((p) => {
-            if (p.id === paperToDelete.id) return false
-            // Check if this is the real paper that replaced the optimistic one
-            const replacedByThis = optimisticPapersByIdRef.current.get(p.id) === paperToDelete.id
-            if (replacedByThis) {
-              logger.info(`Also removing real paper that replaced optimistic paper during optimistic deletion: ${p.id}`)
-              optimisticPapersByIdRef.current.delete(p.id)
-              return false
+          // If real paper has arrived, delete that instead (this ensures we send the WebSocket message)
+          if (realPaperId) {
+            const realPaper = latestPapers.find((p) => p.id === realPaperId) || currentPapers.find((p) => p.id === realPaperId)
+            if (realPaper) {
+              logger.info(`[handleRemove] Real paper ${realPaperId} found, deleting it instead of optimistic paper`)
+              // Continue with real paper deletion logic below (skip optimistic path)
+              paperToDelete = realPaper
+              // Don't return here - let it fall through to real paper deletion logic
+            } else {
+              logger.warn(`[handleRemove] Real paper ID ${realPaperId} found in mapping but not in state`)
+              // Fall through to optimistic deletion
             }
-            // Fallback: check by sourceUrl (for papers uploaded before this change)
-            if (
-              paperToDelete.sourceUrl &&
-              p.sourceUrl === paperToDelete.sourceUrl &&
-              !p.id.startsWith('optimistic-')
-            ) {
-              logger.info(`Also removing real paper with same sourceUrl during optimistic deletion: ${p.id}`)
-              return false
+          }
+
+          // If no real paper found or real paper wasn't in state, proceed with optimistic deletion (don't send WS message yet)
+          if (paperToDelete && paperToDelete.id.startsWith('optimistic-')) {
+            const optimisticPaperToDelete = paperToDelete // TypeScript guard
+            logger.info(`[handleRemove] No real paper found, proceeding with optimistic deletion for ${optimisticPaperToDelete.id}`)
+            // Mark this source URL as optimistically deleted
+            optimisticallyDeletedSourceUrlsRef.current.add(optimisticPaperToDelete.sourceUrl)
+            // Remove from optimistic papers tracking
+            optimisticPapersRef.current.delete(optimisticPaperToDelete.sourceUrl)
+            // Also clean up paper ID mapping if it exists
+            for (const [realPaperId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
+              if (optimisticId === optimisticPaperToDelete.id) {
+                optimisticPapersByIdRef.current.delete(realPaperId)
+                break
+              }
             }
-            return true
-          })
-          setLastImageVector(getLatestPaperVector(filtered))
-          placedPapersRef.current = filtered
-          paperToDelete.texture?.dispose()
-          return filtered
+
+            // Remove optimistic paper immediately from UI
+            // Also remove any real paper that replaced it (defensive cleanup)
+            const filtered = currentPapers.filter((p) => {
+              if (p.id === optimisticPaperToDelete.id) return false
+              // Check if this is the real paper that replaced the optimistic one
+              const replacedByThis = optimisticPapersByIdRef.current.get(p.id) === optimisticPaperToDelete.id
+              if (replacedByThis) {
+                logger.info(`[handleRemove] Also removing real paper that replaced optimistic paper during optimistic deletion: ${p.id}`)
+                optimisticPapersByIdRef.current.delete(p.id)
+                return false
+              }
+              // Fallback: check by sourceUrl (for papers uploaded before this change)
+              if (
+                optimisticPaperToDelete.sourceUrl &&
+                p.sourceUrl === optimisticPaperToDelete.sourceUrl &&
+                !p.id.startsWith('optimistic-')
+              ) {
+                logger.info(`[handleRemove] Also removing real paper with same sourceUrl during optimistic deletion: ${p.id}`)
+                return false
+              }
+              return true
+            })
+            setLastImageVector(getLatestPaperVector(filtered))
+            placedPapersRef.current = filtered
+            optimisticPaperToDelete.texture?.dispose()
+            return filtered
+          }
+          // If we found a real paper, fall through to real paper deletion logic below
         }
 
         // Real paper - optimistically delete it
