@@ -28,7 +28,6 @@ interface UseOrbWebSocketHandlersOptions {
   seenUsersRef: React.MutableRefObject<Set<string>> // Track users seen during initial connection
   sendMessage: (message: unknown, expectResponse: boolean) => Promise<void>
   showToast: (message: React.ReactNode, type: 'info' | 'warning' | 'error', duration?: number, onClick?: () => void) => () => void
-  dismissToast: (id: string) => void
   setCameraOverride: React.Dispatch<React.SetStateAction<{ radius?: number; phi?: number; theta?: number } | null>>
 }
 
@@ -59,7 +58,6 @@ export function useOrbWebSocketHandlers({
   seenUsersRef,
   sendMessage: sendMessageFn,
   showToast,
-  dismissToast,
   setCameraOverride,
 }: UseOrbWebSocketHandlersOptions) {
   const onState = useCallback(
