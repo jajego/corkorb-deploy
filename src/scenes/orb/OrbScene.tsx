@@ -206,6 +206,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
       await sendMessageRef.current(message, expectResponse)
     },
     showToast,
+    dismissToast,
     setCameraOverride,
   })
 

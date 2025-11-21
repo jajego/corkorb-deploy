@@ -27,7 +27,8 @@ interface UseOrbWebSocketHandlersOptions {
   initialConnectionCompleteRef: React.MutableRefObject<boolean>
   seenUsersRef: React.MutableRefObject<Set<string>> // Track users seen during initial connection
   sendMessage: (message: unknown, expectResponse: boolean) => Promise<void>
-  showToast: (message: React.ReactNode, type: 'info' | 'warning' | 'error', duration?: number, onClick?: () => void) => void
+  showToast: (message: React.ReactNode, type: 'info' | 'warning' | 'error', duration?: number, onClick?: () => void) => () => void
+  dismissToast: (id: string) => void
   setCameraOverride: React.Dispatch<React.SetStateAction<{ radius?: number; phi?: number; theta?: number } | null>>
 }
 
@@ -58,6 +59,7 @@ export function useOrbWebSocketHandlers({
   seenUsersRef,
   sendMessage: sendMessageFn,
   showToast,
+  dismissToast,
   setCameraOverride,
 }: UseOrbWebSocketHandlersOptions) {
   const onState = useCallback(
@@ -213,12 +215,14 @@ export function useOrbWebSocketHandlers({
             const cameraTarget = positionToSpherical(convertedPaper.center, ATTACH_CAMERA_RADIUS)
 
             // Show toast with click handler to focus camera on the new paper
-            showToast(
+            // Use a ref to store the dismiss function so it can be accessed in the onClick callback
+            const dismissRef = { current: null as (() => void) | null }
+            const dismissThisToast = showToast(
               <>
                 <strong>{displayName}</strong> pinned an image
               </>,
               'info',
-              6000, // 6 seconds duration
+              30000, // 30 seconds duration
               () => {
                 // Move camera to paper position when toast is clicked
                 setCameraOverride({
@@ -226,8 +230,14 @@ export function useOrbWebSocketHandlers({
                   phi: cameraTarget.phi,
                   theta: cameraTarget.theta,
                 })
+                // Dismiss the toast when clicked
+                if (dismissRef.current) {
+                  dismissRef.current()
+                }
               }
             )
+            // Store the dismiss function in the ref
+            dismissRef.current = dismissThisToast
           }
 
           setPlacedPapers((prev) => {
