@@ -164,6 +164,8 @@ async def handle_get_state(
     
     await session.commit()
     
+    logger.info(f"[GET_STATE] Sending state for orb {message.orb_id}: connected_count={connected_count}, anonymous_count={anonymous_count}, usernames={usernames}")
+    
     response = StateMessage(
       orb_id=message.orb_id, 
       papers=papers_data,

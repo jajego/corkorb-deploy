@@ -198,13 +198,35 @@ export function useOrbWebSocket({
             case 'state': {
               // Update user counts from state message
               const stateMessage = message as import('../types/websocket').StateMessage
-              if (typeof stateMessage.connected_users_count === 'number') {
-                setConnectedUsersCount(stateMessage.connected_users_count)
+              logger.info(`[State] Received state message for orb ${stateMessage.orb_id}, checking for user counts...`)
+              
+              // Always update counts if present in state message (even if 0)
+              // This ensures counts are correct even if they were reset during reconnection
+              // Check both 'in' operator and typeof to handle all cases
+              const hasConnectedCount = 'connected_users_count' in stateMessage
+              const connectedCountValue = stateMessage.connected_users_count
+              const isConnectedCountValid = typeof connectedCountValue === 'number'
+              
+              logger.info(`[State] connected_users_count check: hasField=${hasConnectedCount}, value=${connectedCountValue}, isValid=${isConnectedCountValid}`)
+              
+              if (hasConnectedCount && isConnectedCountValid) {
+                logger.info(`[State] Updating connected_users_count from state message: ${connectedCountValue} (previous value will be replaced)`)
+                setConnectedUsersCount(connectedCountValue)
+              } else {
+                logger.warn(`[State] State message missing or invalid connected_users_count. hasField=${hasConnectedCount}, value=${connectedCountValue}, type=${typeof connectedCountValue}. Full message: ${JSON.stringify(stateMessage)}`)
               }
-              if (typeof stateMessage.anonymous_users_count === 'number') {
-                setAnonymousUsersCount(stateMessage.anonymous_users_count)
+              
+              const hasAnonymousCount = 'anonymous_users_count' in stateMessage
+              const anonymousCountValue = stateMessage.anonymous_users_count
+              const isAnonymousCountValid = typeof anonymousCountValue === 'number'
+              
+              if (hasAnonymousCount && isAnonymousCountValid) {
+                logger.info(`[State] Updating anonymous_users_count from state message: ${anonymousCountValue}`)
+                setAnonymousUsersCount(anonymousCountValue)
               }
+              
               if (Array.isArray(stateMessage.usernames)) {
+                logger.info(`[State] Updating usernames from state message: ${stateMessage.usernames.join(', ')}`)
                 setConnectedUsernames(stateMessage.usernames)
               }
               
@@ -326,6 +348,8 @@ export function useOrbWebSocket({
         wasHiddenRef.current = false
         
         // Reset counts - backend will send updated counts via state message and connected_users_count messages
+        // Note: We reset to 0 here, but the state message should immediately update these values
+        logger.debug('[WebSocket] Resetting user counts to 0 on connect (will be updated by state message)')
         setConnectedUsersCount(0)
         setAnonymousUsersCount(0)
         

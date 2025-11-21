@@ -256,8 +256,14 @@ async def orb_websocket(websocket: WebSocket, orb_id: str):
               await send_error(websocket, "orb_id mismatch", "orb_mismatch", request_id)
               continue
             
-            response = await handle_get_state(session, message, user_id, connection_manager)
-            await websocket.send_json(response.model_dump(mode='json'))
+            try:
+              response = await handle_get_state(session, message, user_id, connection_manager)
+              await websocket.send_json(response.model_dump(mode='json'))
+              logger.info(f"[GET_STATE] Successfully sent state message for orb {message.orb_id} to user {user_id}")
+            except Exception as e:
+              logger.error(f"[GET_STATE] Error handling get_state for orb {message.orb_id}: {e}", exc_info=True)
+              await send_error(websocket, f"Failed to get state: {str(e)}", "state_error", request_id)
+              continue
             
           elif isinstance(message, UpdateViewCenterMessage):
             if message.orb_id != orb_id:
