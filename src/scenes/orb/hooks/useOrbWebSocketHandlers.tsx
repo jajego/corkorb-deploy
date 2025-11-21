@@ -1,4 +1,4 @@
-﻿import { useCallback } from 'react'
+﻿import { useCallback, useRef } from 'react'
 import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { getLatestPaperVector } from '../utils/paper'
@@ -60,6 +60,9 @@ export function useOrbWebSocketHandlers({
   showToast,
   setCameraOverride,
 }: UseOrbWebSocketHandlersOptions) {
+  // Track which papers have already shown NSFW toast to prevent duplicates
+  const nsfwToastShownRef = useRef<Set<string>>(new Set())
+
   const onState = useCallback(
     async (papers: ServerPaper[]) => {
       websocketHasLoadedPapersRef.current = true
@@ -406,8 +409,21 @@ export function useOrbWebSocketHandlers({
 
       const actualPaperId = deletedPaper?.id || paperId
       const isCurrentUserPaper = deletedPaper && deletedPaper.userId === userId
+      
+      // Show NSFW toast only once per paper (prevent duplicates)
       if (reason === 'nsfw_violation' && isCurrentUserPaper) {
-        showToast('Your image was removed due to content violation', 'warning', 8000)
+        // Use both paperId and actualPaperId to catch duplicates from optimistic/real paper transitions
+        const toastKey = `${paperId}-${actualPaperId}`
+        if (!nsfwToastShownRef.current.has(toastKey)) {
+          nsfwToastShownRef.current.add(toastKey)
+          showToast('Your image was removed due to content violation', 'warning', 8000)
+          // Clean up the key after a delay to prevent memory leak (toast duration + buffer)
+          setTimeout(() => {
+            nsfwToastShownRef.current.delete(toastKey)
+          }, 10000)
+        } else {
+          logger.info(`NSFW toast already shown for paper ${paperId} (${actualPaperId}), skipping duplicate`)
+        }
       }
 
       if (!optimisticallyDeletedPapersRef.current.has(paperId)) {
