@@ -856,29 +856,23 @@ export function OrbScene({ orbId }: OrbSceneProps) {
         createdAt={paperPendingDeletion?.createdAt}
         onConfirm={() => {
           if (paperPendingDeletion) {
-            // Find the current paper from ref (handles optimistic -> real paper replacement)
-            // Use ref instead of state to get the latest value
+            // Always use the paper from current state to ensure it exists
+            // This handles optimistic -> real paper replacement correctly
             const currentPapers = placedPapersRef.current.length > 0 ? placedPapersRef.current : placedPapers
             
-            let currentPaper: PlacedPaper | undefined
+            // Try to find the paper by ID first (works for both optimistic and real papers)
+            let currentPaper = currentPapers.find((p) => p.id === paperPendingDeletion.id)
             
-            // First, try to find by the stored ID (works if paper hasn't been replaced)
-            currentPaper = currentPapers.find((p) => p.id === paperPendingDeletion.id)
-            
-            // If not found and this looks like an optimistic ID, check if it was replaced
+            // If not found and it's an optimistic ID, try to find the real paper that replaced it
             if (!currentPaper && paperPendingDeletion.id.startsWith('optimistic-')) {
-              // Check if this optimistic paper was replaced by a real paper
-              // optimisticPapersByIdRef mapping: realPaperId -> optimisticId
+              // Check optimistic mapping: realPaperId -> optimisticId
               for (const [realPaperId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
                 if (optimisticId === paperPendingDeletion.id) {
-                  // Found the real paper that replaced this optimistic one
                   currentPaper = currentPapers.find((p) => p.id === realPaperId)
-                  if (currentPaper) {
-                    break
-                  }
+                  if (currentPaper) break
                 }
               }
-              // Fallback: try matching by sourceUrl (for papers uploaded before mapping was set up)
+              // Fallback: match by sourceUrl
               if (!currentPaper && paperPendingDeletion.sourceUrl) {
                 currentPaper = currentPapers.find(
                   (p) => !p.id.startsWith('optimistic-') && p.sourceUrl === paperPendingDeletion.sourceUrl
@@ -886,8 +880,22 @@ export function OrbScene({ orbId }: OrbSceneProps) {
               }
             }
             
-            // Use found paper or fall back to stored paper (shouldn't happen, but defensive)
-            handleRemove(currentPaper || paperPendingDeletion)
+            // Only proceed if we found the paper in current state
+            // This ensures handleRemove will find it and send the WS message
+            if (currentPaper) {
+              handleRemove(currentPaper)
+            } else {
+              // Paper not found - this shouldn't happen, but log details for debugging
+              console.warn(
+                `Paper not found in state for deletion: ${paperPendingDeletion.id} ` +
+                `(optimistic: ${paperPendingDeletion.id.startsWith('optimistic-')}), ` +
+                `currentPapers count: ${currentPapers.length}, ` +
+                `paper IDs: ${currentPapers.map(p => p.id).join(', ')}, ` +
+                `sourceUrl: ${paperPendingDeletion.sourceUrl}`
+              )
+              // Still try with stored paper - handleRemove will handle the lookup
+              handleRemove(paperPendingDeletion)
+            }
             setPaperPendingDeletion(null)
           }
         }}

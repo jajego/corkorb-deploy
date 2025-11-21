@@ -79,11 +79,14 @@ export function usePaperDeletion({
       setPlacedPapers((currentPapers) => {
         // Strategy: Always find the paper by ID first (most reliable)
         // If not found and it's an optimistic ID, check the mapping for the real paper
+        // Use ref for latest papers to handle race conditions (especially important in production)
+        const latestPapers = placedPapersRef.current.length > 0 ? placedPapersRef.current : currentPapers
 
         let paperToDelete: PlacedPaper | undefined
 
         // First, try to find by the ID we were given (could be optimistic or real)
-        paperToDelete = currentPapers.find((p) => p.id === paper.id)
+        // Check both latestPapers (from ref) and currentPapers (from state) to handle race conditions
+        paperToDelete = latestPapers.find((p) => p.id === paper.id) || currentPapers.find((p) => p.id === paper.id)
 
         // If not found and this looks like an optimistic ID, check if it was replaced
         if (!paperToDelete && paper.id.startsWith('optimistic-')) {
@@ -91,7 +94,7 @@ export function usePaperDeletion({
           for (const [realPaperId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
             if (optimisticId === paper.id) {
               // Found the real paper that replaced this optimistic one
-              paperToDelete = currentPapers.find((p) => p.id === realPaperId)
+              paperToDelete = latestPapers.find((p) => p.id === realPaperId) || currentPapers.find((p) => p.id === realPaperId)
               if (paperToDelete) {
                 logger.info(`Optimistic paper ${paper.id} was replaced by real paper ${realPaperId} - deleting real paper`)
               }
@@ -100,7 +103,9 @@ export function usePaperDeletion({
           }
           // Fallback: try matching by sourceUrl (for papers uploaded before this change)
           if (!paperToDelete && paper.sourceUrl) {
-            paperToDelete = currentPapers.find(
+            paperToDelete = latestPapers.find(
+              (p) => !p.id.startsWith('optimistic-') && p.sourceUrl === paper.sourceUrl
+            ) || currentPapers.find(
               (p) => !p.id.startsWith('optimistic-') && p.sourceUrl === paper.sourceUrl
             )
             if (paperToDelete) {
@@ -109,13 +114,17 @@ export function usePaperDeletion({
           }
         }
 
-        // If still not found, try direct lookup by ID (should always work for real papers)
+        // If still not found, try direct lookup by ID in both ref and state (should always work for real papers)
         if (!paperToDelete) {
-          paperToDelete = currentPapers.find((p) => p.id === paper.id)
+          paperToDelete = latestPapers.find((p) => p.id === paper.id) || currentPapers.find((p) => p.id === paper.id)
         }
 
         if (!paperToDelete) {
-          logger.warn(`Paper not found for deletion: ${paper.id} - may have been already deleted`)
+          logger.warn(
+            `Paper not found for deletion: ${paper.id} (optimistic: ${paper.id.startsWith('optimistic-')}) - ` +
+            `currentPapers count: ${currentPapers.length}, ` +
+            `paper IDs: ${currentPapers.map(p => p.id).join(', ')}`
+          )
           return currentPapers
         }
 
