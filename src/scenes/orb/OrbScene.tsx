@@ -856,18 +856,38 @@ export function OrbScene({ orbId }: OrbSceneProps) {
         createdAt={paperPendingDeletion?.createdAt}
         onConfirm={() => {
           if (paperPendingDeletion) {
-            // Find the current paper from state (handles optimistic -> real paper replacement)
-            // This ensures we're deleting the correct paper even if it was replaced
-            const currentPaper = placedPapers.find(
-              (p) =>
-                p.id === paperPendingDeletion.id ||
-                (paperPendingDeletion.id.startsWith('optimistic-') &&
-                  (optimisticPapersByIdRef.current.get(p.id) === paperPendingDeletion.id ||
-                    (p.sourceUrl === paperPendingDeletion.sourceUrl && !p.id.startsWith('optimistic-')))
-                )
-            ) || paperPendingDeletion
+            // Find the current paper from ref (handles optimistic -> real paper replacement)
+            // Use ref instead of state to get the latest value
+            const currentPapers = placedPapersRef.current.length > 0 ? placedPapersRef.current : placedPapers
             
-            handleRemove(currentPaper)
+            let currentPaper: PlacedPaper | undefined
+            
+            // First, try to find by the stored ID (works if paper hasn't been replaced)
+            currentPaper = currentPapers.find((p) => p.id === paperPendingDeletion.id)
+            
+            // If not found and this looks like an optimistic ID, check if it was replaced
+            if (!currentPaper && paperPendingDeletion.id.startsWith('optimistic-')) {
+              // Check if this optimistic paper was replaced by a real paper
+              // optimisticPapersByIdRef mapping: realPaperId -> optimisticId
+              for (const [realPaperId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
+                if (optimisticId === paperPendingDeletion.id) {
+                  // Found the real paper that replaced this optimistic one
+                  currentPaper = currentPapers.find((p) => p.id === realPaperId)
+                  if (currentPaper) {
+                    break
+                  }
+                }
+              }
+              // Fallback: try matching by sourceUrl (for papers uploaded before mapping was set up)
+              if (!currentPaper && paperPendingDeletion.sourceUrl) {
+                currentPaper = currentPapers.find(
+                  (p) => !p.id.startsWith('optimistic-') && p.sourceUrl === paperPendingDeletion.sourceUrl
+                )
+              }
+            }
+            
+            // Use found paper or fall back to stored paper (shouldn't happen, but defensive)
+            handleRemove(currentPaper || paperPendingDeletion)
             setPaperPendingDeletion(null)
           }
         }}
