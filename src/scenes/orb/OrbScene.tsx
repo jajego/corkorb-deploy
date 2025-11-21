@@ -856,7 +856,18 @@ export function OrbScene({ orbId }: OrbSceneProps) {
         createdAt={paperPendingDeletion?.createdAt}
         onConfirm={() => {
           if (paperPendingDeletion) {
-            handleRemove(paperPendingDeletion)
+            // Find the current paper from state (handles optimistic -> real paper replacement)
+            // This ensures we're deleting the correct paper even if it was replaced
+            const currentPaper = placedPapers.find(
+              (p) =>
+                p.id === paperPendingDeletion.id ||
+                (paperPendingDeletion.id.startsWith('optimistic-') &&
+                  (optimisticPapersByIdRef.current.get(p.id) === paperPendingDeletion.id ||
+                    (p.sourceUrl === paperPendingDeletion.sourceUrl && !p.id.startsWith('optimistic-')))
+                )
+            ) || paperPendingDeletion
+            
+            handleRemove(currentPaper)
             setPaperPendingDeletion(null)
           }
         }}
