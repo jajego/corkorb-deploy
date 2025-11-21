@@ -258,12 +258,19 @@ export function useOrbWebSocketHandlers({
             if (optimisticId || optimisticPaperInState) {
               // Use the ID from state if mapping is missing (handles race condition)
               const actualOptimisticId = optimisticPaperInState?.id || optimisticId
-              const optimisticPaper = optimisticPaperInState || prev.find((p) => p.id === actualOptimisticId)
+              const optimisticPaper = optimisticPaperInState || (actualOptimisticId ? prev.find((p) => p.id === actualOptimisticId) : undefined)
 
-              if (optimisticPaper) {
+              if (optimisticPaper && actualOptimisticId) {
                 // Dispose the optimistic paper's texture if different
                 if (optimisticPaper.texture && optimisticPaper.texture !== convertedPaper.texture) {
                   optimisticPaper.texture.dispose()
+                }
+
+                // Set up the mapping if it doesn't exist yet (handles case where WebSocket arrives before REST API response)
+                // This is critical for deletion to work correctly
+                if (!optimisticPapersByIdRef.current.has(paper.id)) {
+                  optimisticPapersByIdRef.current.set(paper.id, actualOptimisticId)
+                  logger.info(`Setting up optimistic mapping in onPaperCreated: ${paper.id} -> ${actualOptimisticId}`)
                 }
 
                 // Remove ALL optimistic papers with this sourceUrl and add real paper in one atomic update
