@@ -22,6 +22,7 @@ body,
 .cl-card {
   border: none !important;
   box-shadow: none !important;
+  padding-top: 0px !important;
 }
 
 .cl-button__google {

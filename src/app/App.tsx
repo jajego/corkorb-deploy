@@ -18,7 +18,8 @@ function HomeRoute() {
         justifyContent: 'center',
         minHeight: '100vh',
         fontSize: '18px',
-        color: '#666'
+        color: '#666',
+        backgroundColor: "white"
       }}>
         Loading...
       </div>

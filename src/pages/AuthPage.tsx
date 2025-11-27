@@ -57,7 +57,8 @@ export function AuthPage() {
         justifyContent: 'center',
         minHeight: '100vh',
         fontSize: '18px',
-        color: '#666'
+        color: '#666',
+        backgroundColor: "white"
       }}>
         Loading...
       </div>
@@ -82,60 +83,17 @@ export function AuthPage() {
         backgroundColor: 'white',
         padding: '40px',
         borderRadius: '12px',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+        boxShadow: "rgba(255, 255, 255, 0.2) 0px 0px 0px 1px inset, rgba(0, 0, 0, 0.9) 0px 0px 0px 1px"
       }}>
-        {/* <h1 style={{
-          fontSize: '48px',
-          fontWeight: 'bold',
-          marginBottom: '20px',
-          color: '#333'
-        }}>
-          corkorb
-        </h1>
-        <p style={{
-          fontSize: '18px',
-          color: '#666',
-          marginBottom: '30px'
-        }}>
-          {showSignUp ? 'Create an account to continue' : 'Please sign in to continue'}
-        </p> */}
 
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-          {/* <button
-            onClick={handleSwitchToSignIn}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: showSignUp ? '#f0f0f0' : '#4CAF50',
-              color: showSignUp ? '#333' : 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600'
-            }}
-          >
-            Sign In
-          </button>
-          <button
-            onClick={handleSwitchToSignUp}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: showSignUp ? '#4CAF50' : '#f0f0f0',
-              color: showSignUp ? 'white' : '#333',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600'
-            }}
-          >
-            Sign Up
-          </button>
-        </div> */}
         </div>
 
         <div style={{ marginTop: '0px' }}>
           {showSignUp ? (
+            <>
+            <div style={{ fontSize: "54px", fontFamily: "Courier", fontWeight: 600, fontStyle: "italic" }}>CorkOrb</div>
+            <div style={{ margin: "12px 0px 0px 0px" }}><img height="75%" width="75%" src="/PINNED_PICTURE.PNG" /></div>
             <SignUp
               routing="virtual"
               signInUrl="/sign-in"
@@ -148,7 +106,11 @@ export function AuthPage() {
                 },
               }}
             />
+            </>
           ) : (
+            <>
+            <div style={{ fontSize: "54px", fontFamily: "Courier", fontWeight: 600, fontStyle: "italic" }}>CorkOrb</div>
+            <div style={{ margin: "12px 0px 0px 0px" }}><img height="75%" width="75%" src="/PINNED_PICTURE.PNG" /></div>
             <SignIn
               routing="virtual"
               signUpUrl="/sign-up"
@@ -161,6 +123,7 @@ export function AuthPage() {
                 },
               }}
             />
+            </>
           )}
         </div>
       </div>
