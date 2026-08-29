@@ -44,7 +44,7 @@ body,
   background-color: white;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.13)),
-    url('/textures/office.jpg');
+    url('/textures/office.webp');
   background-size: cover;
   background-position: center;
 }

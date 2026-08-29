@@ -8,9 +8,13 @@
   color: #211d18;
   text-align: center;
   font-family: 'Times New Roman', Times, serif;
-  background:
+  background-color: #ded9cf;
+  background-image:
     linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)),
-    url('/textures/office.jpg') center / cover fixed;
+    url('/textures/office.webp');
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
 }
 
 .splash-card {
