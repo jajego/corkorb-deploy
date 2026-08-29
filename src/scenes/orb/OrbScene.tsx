@@ -15,9 +15,14 @@ import { TouchGestureHandler } from './components/TouchGestureHandler'
 import { CanvasCapture } from './components/CanvasCapture'
 import { dispatchOrbEvent, ORB_EVENT } from '../../three/constants/events'
 import { ORB_MODE, useOrbStateMachine } from './state'
-import { PAPER_OFFSET, PAPER_SPHERE_RADIUS, PAPER_ROTATION_STEP } from './components/papers/constants'
+import {
+  PAPER_OFFSET,
+  PAPER_SPHERE_RADIUS,
+  PAPER_ROTATION_STEP,
+  POLYHEDRON_PAPER_OFFSET,
+} from './components/papers/constants'
 import { useOrbWebSocket } from '../../hooks/useOrbWebSocket'
-import type { PendingPaper, PlacedPaper } from '../../types/orb'
+import type { CorkShape, PendingPaper, PlacedPaper } from '../../types/orb'
 import { ToastContainer, useToast } from '../../components/ToastContainer'
 import { AboutModal } from '../../components/AboutModal'
 import { DeletePaperModal } from '../../components/DeletePaperModal'
@@ -52,10 +57,11 @@ const cameraUp = new THREE.Vector3()
 
 type OrbSceneProps = {
   orbId: string
+  initialShape?: CorkShape
 }
 
 
-export function OrbScene({ orbId }: OrbSceneProps) {
+export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
   const { userId, signOut, isSignedIn } = useAuth()
   const { user } = useUser()
   const username = user?.username || null
@@ -74,7 +80,9 @@ export function OrbScene({ orbId }: OrbSceneProps) {
   const [autoRotateEnabled, setAutoRotateEnabled] = useState(false)
   const [autoRotateSpeed, setAutoRotateSpeed] = useState(0.05)
   const [showAllTooltips, setShowAllTooltips] = useState(false)
-  const [orbExists, setOrbExists] = useState<boolean | null>(null)
+  const [orbExists, setOrbExists] = useState<boolean | null>(initialShape ? true : null)
+  const [orbShape, setOrbShape] = useState<CorkShape>(initialShape ?? 'sphere')
+  const surfaceMeshRef = useRef<THREE.Mesh>(null)
   const captureOrbRef = useRef<((options: { duration: number; fps?: number; onProgress?: (progress: number) => void }) => Promise<void>) | null>(null)
   const { cameraSpherical, handleSphericalChange } = useCameraSpherical()
   const [lastClickVector, setLastClickVector] = useState<THREE.Vector3 | null>(null)
@@ -110,6 +118,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     orbId,
     websocketHasLoadedPapersRef,
     setOrbExists,
+    setOrbShape,
     setPlacedPapers,
     setLastImageVector,
     placedPapersRef,
@@ -216,7 +225,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     anonymousUsersCount,
     connectedUsernames,
     sendMessage,
-    // @ts-ignore
+    // @ts-expect-error handler callbacks accept async work while the socket hook does not await it
   } = useOrbWebSocket({
     orbId,
     username,
@@ -573,8 +582,12 @@ export function OrbScene({ orbId }: OrbSceneProps) {
       const point = event.point?.clone()
       if (!point) return
 
-      const normal = point.clone().normalize()
-      center = normal.clone().multiplyScalar(PAPER_SPHERE_RADIUS + PAPER_OFFSET)
+      const normal = event.face?.normal
+        ? event.face.normal.clone().transformDirection(event.object.matrixWorld)
+        : point.clone().normalize()
+      center = orbShape === 'sphere'
+        ? normal.clone().multiplyScalar(PAPER_SPHERE_RADIUS + PAPER_OFFSET)
+        : point.clone().addScaledVector(normal, POLYHEDRON_PAPER_OFFSET + layerOffset)
 
       cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion)
       cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion)
@@ -606,9 +619,11 @@ export function OrbScene({ orbId }: OrbSceneProps) {
 
     if (!center || !quaternion || !basisRight || !basisUp) return
 
-    const outwardNormal = normalizeVector(center.clone())
-    const expectedRadius = PAPER_SPHERE_RADIUS + PAPER_OFFSET + layerOffset
-    center = outwardNormal.multiplyScalar(expectedRadius)
+    if (orbShape === 'sphere') {
+      const outwardNormal = normalizeVector(center.clone())
+      const expectedRadius = PAPER_SPHERE_RADIUS + PAPER_OFFSET + layerOffset
+      center = outwardNormal.multiplyScalar(expectedRadius)
+    }
 
     const spherical = new THREE.Spherical().setFromVector3(center)
 
@@ -646,12 +661,17 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     ghostGeometryRef.current = null
   }
 
-  const handleAddPin = (worldPosition: THREE.Vector3) => {
+  const handleAddPin = (worldPosition: THREE.Vector3, worldNormal: THREE.Vector3) => {
     setPendingPaper((prev) => {
       if (!prev || prev.stage !== 'pinning') return prev
       if (prev.pins.length >= PIN_LIMIT) return prev
       const color = PIN_COLORS[Math.floor(Math.random() * PIN_COLORS.length)]
-      const newPin = { id: makeId('pin'), position: worldPosition.clone(), color }
+      const newPin = {
+        id: makeId('pin'),
+        position: worldPosition.clone(),
+        color,
+        normal: worldNormal.clone(),
+      }
       return { ...prev, pins: [...prev.pins, newPin] }
     })
   }
@@ -690,11 +710,17 @@ export function OrbScene({ orbId }: OrbSceneProps) {
 
   return (
     <div ref={dropZoneRef} className="orb-dropzone">
-      <Canvas camera={{ position: [0, 0, 3.5], fov: 50 }} style={{ width: '100vw', height: '100vh' }}>
+      {orbExists === true ? (
+        <Canvas camera={{ position: [0, 0, 3.5], fov: 50 }} style={{ width: '100vw', height: '100vh' }}>
         {/* <color attach="background-image" args={['/public/textures/skybox.jpg']} /> */}
-        <CanvasCapture onCaptureReady={(captureFn) => { captureOrbRef.current = captureFn }} />
+        <CanvasCapture
+          radius={orbShape === 'sphere' ? 1 : Math.sqrt(3)}
+          onCaptureReady={(captureFn) => { captureOrbRef.current = captureFn }}
+        />
         <OrbLights />
         <CorkOrb
+          ref={surfaceMeshRef}
+          shape={orbShape}
           onPointerOver={() => {
             if (!cameraInteractionEnabled) return
             if (!draggingOrb) setHoveringOrb(true)
@@ -731,6 +757,8 @@ export function OrbScene({ orbId }: OrbSceneProps) {
             pointer={pointerForInteraction}
             rotation={pendingPaper.rotation}
             layerOffset={pendingPaper.layerOffset ?? nextLayerOffset}
+            shape={orbShape}
+            surfaceRef={surfaceMeshRef}
             onTransformChange={(transform) => {
               if (ghostTransformRef.current) {
                 ghostTransformRef.current.center.copy(transform.center)
@@ -757,6 +785,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
               texture={paper.texture}
               aspect={paper.aspect}
               scale={paper.scale}
+              shape={orbShape}
               center={paper.center}
               quaternion={paper.quaternion}
               right={paper.basisRight}
@@ -785,6 +814,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
             texture={pendingPaper.texture}
             aspect={pendingPaper.aspect}
             scale={pendingPaper.scale}
+            shape={orbShape}
             center={pendingPaper.center}
             quaternion={pendingPaper.quaternion}
             right={pendingPaper.basisRight}
@@ -807,6 +837,7 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           idleAutoRotateEnabled={autoRotateEnabled}
           autoRotateSpeed={autoRotateSpeed}
           controlsEnabled={cameraInteractionEnabled}
+          minRadius={orbShape === 'sphere' ? 1.6 : 2.1}
           overrideTarget={cameraOverrideTarget}
           onSphericalChange={handleSphericalChange}
         />
@@ -815,7 +846,8 @@ export function OrbScene({ orbId }: OrbSceneProps) {
           onPinchScale={handlePinchScale}
           onTwistRotate={handleTwistRotate}
         />
-      </Canvas>
+        </Canvas>
+      ) : null}
       {/* <AttachHud mode={state.mode} onEnterAttach={enterAttach} /> */}
       {/* {!pendingPaper && !attachActive && (
         <div className="drop-hint">Drag & drop an image to attach to the orb</div>
@@ -954,4 +986,3 @@ export function OrbScene({ orbId }: OrbSceneProps) {
     </div>
   )
 }
-

@@ -181,6 +181,9 @@ export function usePaperCreation({
           z: pin.position.z,
         },
         color: pin.color,
+        normal: pin.normal
+          ? { x: pin.normal.x, y: pin.normal.y, z: pin.normal.z }
+          : undefined,
       })
     )
     formData.append('data', JSON.stringify(paperData))
@@ -217,6 +220,19 @@ export function usePaperCreation({
         if (sourceUrl) {
           optimisticPapersRef.current.set(sourceUrl, optimisticId)
         }
+        // A state or paper_created event may have arrived before this response.
+        // Once its server ID is known, remove the duplicate optimistic entry.
+        setPlacedPapers((prev) => {
+          const optimisticPaper = prev.find((paper) => paper.id === optimisticId)
+          const serverPaper = prev.find((paper) => paper.id === paperResponse.id)
+          if (!optimisticPaper || !serverPaper) return prev
+
+          optimisticPaper.texture?.dispose()
+          const updated = prev.filter((paper) => paper.id !== optimisticId)
+          setLastImageVector(getLatestPaperVector(updated))
+          placedPapersRef.current = updated
+          return updated
+        })
       })
       .catch((error) => {
         logger.error('Failed to upload image', error)

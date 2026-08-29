@@ -2,18 +2,17 @@
 
 import json
 import logging
-import time
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.schemas.paper import PaperCreate, PaperData, PaperResponse
+from app.schemas.paper import PaperData, PaperResponse
 from app.schemas.pin import PinCreate
 from app.schemas.ws import PaperCreatedMessage
 from app.services import paper as paper_service, s3 as s3_service
-from app.utils.auth import get_current_user_id, get_current_user_info
+from app.utils.auth import get_current_user_info
 from app.utils.authorization import require_orb_access
 from app.ws.orb import connection_manager
 
@@ -32,16 +31,6 @@ ALLOWED_MIME_TYPES = {
   "image/gif",
   "image/webp",
 }
-
-# MIME type to file extension mapping
-MIME_TO_EXTENSION = {
-  "image/jpeg": "jpg",
-  "image/jpg": "jpg",
-  "image/png": "png",
-  "image/gif": "gif",
-  "image/webp": "webp",
-}
-
 
 def validate_image_file(file: UploadFile) -> tuple[str, str]:
   """
@@ -124,21 +113,9 @@ async def create_paper_with_image(
   - Other users receive CDN URL via WebSocket (already uploaded, fast to load)
   - CDN URL sent immediately after S3 upload (no waiting for Rekognition)
   """
-  request_start_time = time.time()
-  logger.info(f"[TIMING] Upload request started for orb {orb_id}")
-  
   try:
-    # 1. Validate file
-    validation_start = time.time()
     file_extension, content_type = validate_image_file(file)
-    validation_time = time.time() - validation_start
-    logger.info(f"[TIMING] File validation: {validation_time*1000:.1f}ms")
-    
-    # 2. Read file content
-    read_start = time.time()
     file_content = await file.read()
-    read_time = time.time() - read_start
-    logger.info(f"[TIMING] File read: {read_time*1000:.1f}ms ({len(file_content)} bytes)")
     
     # Check file size again (after reading - this is the definitive check)
     actual_size = len(file_content)
@@ -154,15 +131,9 @@ async def create_paper_with_image(
     # fall back to JWT token username if available
     paper_username = username or user_info.get("username")
     
-    # 4. Check orb access
-    auth_start = time.time()
     await require_orb_access(session, orb_id, user_id)
-    auth_time = time.time() - auth_start
-    logger.info(f"[TIMING] Authorization check: {auth_time*1000:.1f}ms")
     
     # 5. Parse pin and data from JSON strings
-    parse_start = time.time()
-    import json
     try:
       pin_data = PinCreate(**json.loads(pin))
     except (json.JSONDecodeError, ValueError) as e:
@@ -180,15 +151,12 @@ async def create_paper_with_image(
           status_code=status.HTTP_400_BAD_REQUEST,
           detail=f"Invalid paper data: {str(e)}"
         )
-    parse_time = time.time() - parse_start
-    logger.info(f"[TIMING] Parse pin/data: {parse_time*1000:.1f}ms")
     
     # 6. Generate paper ID first (needed for S3 key)
     from uuid import uuid4
     paper_id = uuid4().hex
     
-    # 7. Upload to S3 first (before creating DB record - faster DB insert)
-    s3_start = time.time()
+    # 7. Upload to S3 before creating the database record.
     try:
       cdn_url = await s3_service.upload_image(
         file_content=file_content,
@@ -197,8 +165,6 @@ async def create_paper_with_image(
         file_extension=file_extension,
         content_type=content_type,
       )
-      s3_upload_time = time.time() - s3_start
-      logger.info(f"[TIMING] S3 upload: {s3_upload_time*1000:.1f}ms")
     except ValueError as e:
       logger.error(f"S3 upload failed: {e}")
       raise HTTPException(
@@ -206,24 +172,14 @@ async def create_paper_with_image(
         detail=f"Failed to upload image to S3: {str(e)}"
       )
     
-    # 8. Create Paper record with CDN URL directly (fast - no large blob data)
+    # 8. Create Paper record with CDN URL directly.
     # Note: Frontend uploader will use their local file for instant feedback
     # Other users will receive CDN URL via WebSocket (already uploaded to S3)
-    db_create_start = time.time()
-    paper_create = PaperCreate(
-      user_id=user_id,
-      username=paper_username,
-      source_url=cdn_url,  # Store CDN URL directly (not blob URL - performance optimization)
-      pin=pin_data,
-      data=paper_data,
-    )
-    
     # Create paper with pre-generated ID
-    from app.repositories import paper as paper_repo
     from app.models.paper import Paper
-    # Store pin_position in flat format: {'x': 0.0, 'y': 0.0, 'z': 0.0, 'color': '...'}
+    # Store the pin position, color, and optional polygon surface normal together.
     # (consistent with create_paper service)
-    pin_position_flat = {**pin_data.position, "color": pin_data.color}
+    pin_position_flat = {**pin_data.position, "color": pin_data.color, "normal": pin_data.normal}
     paper_model = Paper(
       id=paper_id,  # Use pre-generated ID
       orb_id=orb_id,
@@ -240,37 +196,11 @@ async def create_paper_with_image(
     await session.refresh(paper_model)
     await session.commit()
     
-    # Convert to response model
-    from app.schemas.paper import PaperResponse, PinData
-    
-    # Map pin_position to pin for PaperResponse
-    # pin_position is stored in flat format: {'x': 0.0, 'y': 0.0, 'z': 0.0, 'color': '...'}
-    pin_dict = paper_model.pin_position
-    position = {k: v for k, v in pin_dict.items() if k != "color"}
-    color = pin_dict.get("color", "#ff4d4f")
-    pin_data = PinData(position=position, color=color)
-    
-    # Create PaperResponse manually to properly map fields
-    paper = PaperResponse(
-      id=paper_model.id,
-      orb_id=paper_model.orb_id,
-      user_id=paper_model.user_id,
-      username=paper_model.username,
-      source_url=paper_model.source_url,
-      created_at=paper_model.created_at,
-      uploaded=paper_model.uploaded,
-      validated=paper_model.validated,
-      data=paper_model.data if paper_model.data else None,
-      pin=pin_data,
-    )
-    
-    db_create_time = time.time() - db_create_start
-    logger.info(f"[TIMING] Create paper in DB: {db_create_time*1000:.1f}ms")
+    paper = paper_service.paper_to_response(paper_model)
     
     logger.info(f"Created paper {paper.id} for orb {orb_id} with CDN URL (username: {paper_username})")
     
     # 9. Trigger async Rekognition check (fire-and-forget, no Redis needed)
-    rekognition_start = time.time()
     import asyncio
     from app.workers.rekognition_async import check_image_safety_async
 
@@ -281,30 +211,20 @@ async def create_paper_with_image(
         file_extension=file_extension,
       )
     )
-    rekognition_trigger_time = time.time() - rekognition_start
-    logger.info(f"[TIMING] Trigger Rekognition task: {rekognition_trigger_time*1000:.1f}ms")
     logger.info(f"Started Rekognition check for paper {paper.id} (background task)")
     
     # 8. Broadcast paper_created WebSocket message with CDN URL
     # CDN URL is already available (uploaded to S3 synchronously)
     # Other users will load from CDN (fast, cached, optimized)
-    ws_start = time.time()
     paper_dict = paper.model_dump(mode='json')
     # Use CDN URL (already uploaded to S3, no need for blob URL)
     # Frontend uploader uses their local file for instant feedback
 
     message = PaperCreatedMessage(orb_id=orb_id, paper=paper_dict)
     await connection_manager.broadcast_to_orb(orb_id, message.model_dump(mode='json'))
-    ws_time = time.time() - ws_start
-    logger.info(f"[TIMING] WebSocket broadcast: {ws_time*1000:.1f}ms")
 
     logger.info(f"Broadcasted paper_created message for paper {paper.id} to orb {orb_id} with CDN URL")
     
-    # 9. Return Paper with CDN URL in response
-    # Frontend uploader should use their local file for instant feedback
-    # CDN URL is returned for reference (frontend can preload it for seamless transition)
-    total_time = time.time() - request_start_time
-    logger.info(f"[TIMING] Total request time: {total_time*1000:.1f}ms")
     return paper
     
   except HTTPException:

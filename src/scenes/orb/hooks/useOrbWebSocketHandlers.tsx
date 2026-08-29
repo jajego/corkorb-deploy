@@ -2,7 +2,7 @@
 import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { getLatestPaperVector } from '../utils/paper'
-import { serverPaperToPlacedPaper } from '../utils/texture'
+import { hydrateServerPapers, serverPaperToPlacedPaper } from '../utils/texture'
 import { positionToSpherical } from '../utils/math'
 import { ATTACH_CAMERA_RADIUS } from '../utils/constants'
 import type { ServerPaper } from '../../../types/websocket'
@@ -66,27 +66,10 @@ export function useOrbWebSocketHandlers({
   const onState = useCallback(
     async (papers: ServerPaper[]) => {
       websocketHasLoadedPapersRef.current = true
+      // State closes the initial join window on both a first connection and reconnect.
+      initialConnectionCompleteRef.current = true
 
-      // Mark initial connection as complete when we receive state
-      // The backend sends user_joined messages for existing users immediately on connect (before state),
-      // but these messages can arrive asynchronously. By the time we receive state, we should have
-      // received most/all of those user_joined messages, and they're tracked in seenUsersRef.
-      // 
-      // After this point, any user_joined messages we receive should be for genuinely new users
-      // (unless they're late-arriving messages from the initial batch, which we filter by checking seenUsersRef).
-      if (!initialConnectionCompleteRef.current) {
-        // First connection - mark as complete (seenUsersRef should have all initial users by now)
-        initialConnectionCompleteRef.current = true
-      } else {
-        // Reconnection - initialConnectionCompleteRef was reset when WebSocket connected
-        // Mark as complete now that we've received state. seenUsersRef persists across reconnections,
-        // so users who were already connected when we first joined won't trigger toasts.
-        initialConnectionCompleteRef.current = true
-      }
-
-      // Convert server papers to client papers
-      const convertedPapers = await Promise.all(papers.map((paper) => serverPaperToPlacedPaper(paper)))
-      const validPapers = convertedPapers.filter((paper): paper is PlacedPaper => paper !== null)
+      const validPapers = await hydrateServerPapers(papers, placedPapersRef.current)
 
       // Preserve optimistic papers that haven't been replaced yet
       // Also respect optimistically deleted papers (don't re-add them from server state)
@@ -128,6 +111,9 @@ export function useOrbWebSocketHandlers({
         })
 
         const merged = [...validPapersFiltered, ...optimisticPapersToKeep]
+        for (const paper of prev) {
+          if (!merged.includes(paper)) paper.texture?.dispose()
+        }
         setLastImageVector(getLatestPaperVector(merged))
         placedPapersRef.current = merged
         return merged
@@ -136,7 +122,6 @@ export function useOrbWebSocketHandlers({
     [
       websocketHasLoadedPapersRef,
       initialConnectionCompleteRef,
-      seenUsersRef,
       optimisticPapersRef,
       optimisticPapersByIdRef,
       optimisticallyDeletedPapersRef,

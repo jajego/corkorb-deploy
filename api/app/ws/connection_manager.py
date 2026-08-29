@@ -105,7 +105,6 @@ class ConnectionManager:
   def get_orb_connections(self, orb_id: str) -> Set[WebSocket]:
     """Get all connections for an orb."""
     connections = self.connections.get(orb_id, set()).copy()
-    logger.info(f"[DEBUG] get_orb_connections for {orb_id}: connections set has {len(connections)} items")
     return connections
 
   def get_user_id(self, websocket: WebSocket) -> str | None:
@@ -208,9 +207,7 @@ class ConnectionManager:
 
   def get_users_in_orb(self, orb_id: str) -> Set[str]:
     connections = self.get_orb_connections(orb_id)
-    logger.info(f"[DEBUG] get_users_in_orb for {orb_id}: found {len(connections)} connections")
     users = {self.websocket_to_user.get(ws) for ws in connections if self.websocket_to_user.get(ws)}
-    logger.info(f"[DEBUG] get_users_in_orb for {orb_id}: found {len(users)} users: {users}")
     return users
 
 
@@ -320,4 +317,3 @@ async def stop_redis_subscriber():
     except asyncio.CancelledError:
       pass
     logger.info("Redis pub/sub subscriber task stopped")
-

@@ -63,7 +63,7 @@ export function ToastComponent({ toast, onDismiss }: ToastProps) {
     if (toast.onClick) {
       toast.onClick()
     }
-  }, [toast.onClick, toast.id])
+  }, [toast])
 
   return (
     <div 

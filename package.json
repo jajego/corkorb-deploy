@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "npm run test:geometry",
+    "test:geometry": "vite build --ssr scripts/test-polyhedron-paper-wrap.mjs --outDir node_modules/.cache/corkorb-geometry-test && node node_modules/.cache/corkorb-geometry-test/test-polyhedron-paper-wrap.js",
     "preview": "vite preview",
     "start": "vite preview",
     "postinstall": "node scripts/fix-clerk.js"

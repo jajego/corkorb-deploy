@@ -3,19 +3,22 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@clerk/react'
 import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
-import { serverPaperToPlacedPaper } from '../utils/texture'
+import { preloadCorkTexture } from '../../../three/textures/useCorkTexture'
+import { hydrateServerPapers } from '../utils/texture'
 import { getLatestPaperVector } from '../utils/paper'
 import type { ServerPaper } from '../../../types/websocket'
-import type { PlacedPaper } from '../../../types/orb'
+import type { CorkShape, PlacedPaper } from '../../../types/orb'
 
 const logger = createLogger('OrbScene')
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const REST_FALLBACK_DELAY_MS = 5_000
 
 interface UseOrbInitialLoadOptions {
   orbId: string
   websocketHasLoadedPapersRef: React.MutableRefObject<boolean>
   setOrbExists: (exists: boolean | null) => void
+  setOrbShape: (shape: CorkShape) => void
   setPlacedPapers: React.Dispatch<React.SetStateAction<PlacedPaper[]>>
   setLastImageVector: (vector: THREE.Vector3 | null) => void
   placedPapersRef: React.MutableRefObject<PlacedPaper[]>
@@ -25,6 +28,7 @@ export function useOrbInitialLoad({
   orbId,
   websocketHasLoadedPapersRef,
   setOrbExists,
+  setOrbShape,
   setPlacedPapers,
   setLastImageVector,
   placedPapersRef,
@@ -33,52 +37,55 @@ export function useOrbInitialLoad({
   const navigate = useNavigate()
 
   useEffect(() => {
-    async function checkOrbExistsAndLoadPapers() {
+    websocketHasLoadedPapersRef.current = false
+    let cancelled = false
+    let fallbackTimeout: number | undefined
+
+    async function loadFallbackPapers() {
+      if (cancelled || websocketHasLoadedPapersRef.current) return
+
       try {
-        // Get token if user is authenticated (optional for viewing)
         const token = await getToken()
-        
-        // Build headers - include Authorization only if token exists
-        const headers: HeadersInit = {}
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`
-        }
-        
         const response = await fetch(`${API_BASE_URL}/api/orbs/${orbId}`, {
-          headers,
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         })
-        
+        if (!response.ok) return
+
+        const orb = await response.json() as { papers?: ServerPaper[] }
+        if (cancelled || websocketHasLoadedPapersRef.current || !orb.papers?.length) return
+
+        const fallbackPapers = await hydrateServerPapers(orb.papers, placedPapersRef.current)
+        setPlacedPapers((prev) => {
+          if (cancelled || websocketHasLoadedPapersRef.current) return prev
+
+          const existingIds = new Set(prev.map((paper) => paper.id))
+          const merged = [...prev, ...fallbackPapers.filter((paper) => !existingIds.has(paper.id))]
+          setLastImageVector(getLatestPaperVector(merged))
+          placedPapersRef.current = merged
+          return merged
+        })
+      } catch (error) {
+        logger.warn('REST paper fallback failed', error)
+      }
+    }
+
+    async function checkOrbExists() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/orbs/${orbId}?include_papers=false`)
+
         if (response.status === 404) {
           setOrbExists(false)
           setTimeout(() => {
             navigate('/')
           }, 2000)
         } else if (response.ok) {
+          if (cancelled) return
+          const orb = await response.json() as { shape?: CorkShape }
+          if (cancelled) return
+          setOrbShape(orb.shape ?? 'sphere')
           setOrbExists(true)
-          
-          const orbData = await response.json() as { papers?: ServerPaper[] }
-          
-          if (websocketHasLoadedPapersRef.current) {
-            logger.debug('Initial load: Skipping GET papers - WebSocket already loaded papers first')
-          } else if (orbData.papers && Array.isArray(orbData.papers) && orbData.papers.length > 0) {
-            logger.debug(`Initial load: Found ${orbData.papers.length} papers in GET response`)
-            
-            const serverPapers: ServerPaper[] = orbData.papers
-            
-            const convertedPapers = await Promise.all(
-              serverPapers.map((paper) => serverPaperToPlacedPaper(paper))
-            )
-            const validPapers = convertedPapers.filter((paper): paper is PlacedPaper => paper !== null)
-            
-            if (validPapers.length > 0) {
-              logger.debug(`Initial load: Successfully loaded ${validPapers.length} papers from GET`)
-              setPlacedPapers(validPapers)
-              setLastImageVector(getLatestPaperVector(validPapers))
-              placedPapersRef.current = validPapers
-            }
-          } else {
-            logger.debug('Initial load: No papers in GET response')
-          }
+
+          fallbackTimeout = window.setTimeout(loadFallbackPapers, REST_FALLBACK_DELAY_MS)
         } else {
           setOrbExists(false)
           navigate('/')
@@ -89,8 +96,12 @@ export function useOrbInitialLoad({
         navigate('/')
       }
     }
-    
-    checkOrbExistsAndLoadPapers()
-  }, [orbId, getToken, navigate, websocketHasLoadedPapersRef, setOrbExists, setPlacedPapers, setLastImageVector, placedPapersRef])
+    preloadCorkTexture()
+    checkOrbExists()
+    return () => {
+      cancelled = true
+      if (fallbackTimeout !== undefined) window.clearTimeout(fallbackTimeout)
+    }
+  }, [orbId, getToken, navigate, websocketHasLoadedPapersRef, setOrbExists, setOrbShape, setPlacedPapers, setLastImageVector, placedPapersRef])
 }
 

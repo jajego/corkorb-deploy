@@ -12,15 +12,23 @@ from app.services import orb as orb_service, paper as paper_service
 @pytest.mark.asyncio
 async def test_create_and_get_orb(db_session):
   """Test creating and retrieving an orb."""
-  create_data = OrbCreate(max_papers=30)
+  create_data = OrbCreate(max_papers=30, shape="cube")
   created = await orb_service.create_orb(db_session, create_data)
   assert created.id is not None
   assert created.max_papers == 30
+  assert created.shape == "cube"
 
   retrieved = await orb_service.get_orb(db_session, created.id)
   assert retrieved is not None
   assert retrieved.id == created.id
   assert retrieved.max_papers == 30
+  assert retrieved.shape == "cube"
+
+
+def test_orb_shape_defaults_and_validation():
+  assert OrbCreate().shape == "sphere"
+  with pytest.raises(ValueError):
+    OrbCreate(shape="torus")
 
 
 @pytest.mark.asyncio
@@ -129,4 +137,3 @@ async def test_delete_paper(db_session):
 
   retrieved = await paper_service.get_paper(db_session, paper.id)
   assert retrieved is None
-

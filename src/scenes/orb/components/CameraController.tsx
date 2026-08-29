@@ -35,6 +35,7 @@ type CameraControllerProps = {
   controlsEnabled: boolean
   overrideTarget?: { radius?: number; phi?: number; theta?: number } | null
   onSphericalChange?: (spherical: THREE.Spherical) => void
+  minRadius?: number
 }
 
 type PointerPosition = { x: number; y: number }
@@ -47,6 +48,7 @@ export function CameraController({
   controlsEnabled,
   overrideTarget = null,
   onSphericalChange,
+  minRadius = MIN_RADIUS,
 }: CameraControllerProps) {
   const { camera, gl } = useThree()
 
@@ -91,7 +93,7 @@ export function CameraController({
         // Apply pinch scale to zoom (radius)
         // Invert scale so pinch out = zoom in (like mouse wheel)
         const zoomFactor = 1 / scale
-        s.radius = THREE.MathUtils.clamp(s.radius * zoomFactor, MIN_RADIUS, MAX_RADIUS)
+        s.radius = THREE.MathUtils.clamp(s.radius * zoomFactor, minRadius, MAX_RADIUS)
       },
       onPinchEnd: () => {
         // Pinch ended
@@ -274,7 +276,7 @@ export function CameraController({
       const direction = event.deltaY > 0 ? 1 : -1
       const factor = 1 + direction * ZOOM_FACTOR
 
-      s.radius = THREE.MathUtils.clamp(s.radius * factor, MIN_RADIUS, MAX_RADIUS)
+      s.radius = THREE.MathUtils.clamp(s.radius * factor, minRadius, MAX_RADIUS)
     }
 
     window.addEventListener(ORB_EVENT.startDrag, handleStartDrag)
@@ -301,7 +303,7 @@ export function CameraController({
       dom.removeEventListener('touchcancel', handleTouchCancel)
       dom.removeEventListener('wheel', handleWheel)
     }
-  }, [gl, setDraggingOrb, controlsEnabled])
+  }, [gl, setDraggingOrb, controlsEnabled, minRadius])
 
   useFrame((_, delta) => {
     const s = spherical.current
@@ -335,7 +337,7 @@ export function CameraController({
     }
 
     s.phi = THREE.MathUtils.clamp(s.phi, MIN_PHI, MAX_PHI)
-    s.radius = THREE.MathUtils.clamp(s.radius, MIN_RADIUS, MAX_RADIUS)
+    s.radius = THREE.MathUtils.clamp(s.radius, minRadius, MAX_RADIUS)
     s.theta = wrapAngle(s.theta)
 
     camera.position.setFromSpherical(s)
@@ -348,4 +350,3 @@ export function CameraController({
 
   return null
 }
-

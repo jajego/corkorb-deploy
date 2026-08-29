@@ -42,7 +42,7 @@ export function TestClerkToken() {
               const remaining = exp - now
               logger.info(`Token lifetime: ${Math.floor(lifetime / 60)} minutes, remaining: ${Math.floor(remaining / 60)} minutes`)
             }
-          } catch (e) {
+          } catch {
             // Ignore decode errors
           }
         }
@@ -183,7 +183,7 @@ export function TestClerkToken() {
                   </div>
                 )
               }
-            } catch (e) {
+            } catch {
               // Ignore decode errors
             }
             return null

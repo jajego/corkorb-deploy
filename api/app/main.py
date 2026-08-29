@@ -1,5 +1,4 @@
 import logging
-import time
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,23 +55,22 @@ def create_app() -> FastAPI:
     allow_headers=["*"],
   )
 
-  # Add request logging middleware (skip WebSocket upgrades)
+  # Keep normal request paths quiet; failures retain method, path, and status.
   @app.middleware("http")
   async def log_requests(request: Request, call_next):
     # Skip logging for WebSocket upgrade requests (they're handled separately)
     if request.headers.get("upgrade", "").lower() == "websocket":
       return await call_next(request)
     
-    logger.info(f"Incoming request: {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}")
-    start_time = time.time()
     try:
       response = await call_next(request)
-      elapsed = time.time() - start_time
-      logger.info(f"Response: {request.method} {request.url.path} - {response.status_code} ({elapsed:.3f}s)")
+      if response.status_code >= 500:
+        logger.error("Request failed: %s %s (%s)", request.method, request.url.path, response.status_code)
+      elif response.status_code >= 400:
+        logger.warning("Request rejected: %s %s (%s)", request.method, request.url.path, response.status_code)
       return response
-    except Exception as e:
-      elapsed = time.time() - start_time
-      logger.error(f"Error handling request {request.method} {request.url.path} after {elapsed:.3f}s: {e}", exc_info=True)
+    except Exception:
+      logger.exception("Request crashed: %s %s", request.method, request.url.path)
       raise
 
   # routers
@@ -103,4 +101,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

@@ -40,13 +40,18 @@ body,
   width: 100%;
   height: 100%;
   position: relative;
+  isolation: isolate;
   background-color: white;
-  background-image: url('/public/textures/office.jpg');
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.13)),
+    url('/textures/office.jpg');
   background-size: cover;
+  background-position: center;
 }
 
 .orb-dropzone.drag-active {
-  border: 2px dashed #ffb84a;
+  outline: 3px double #211d18;
+  outline-offset: -10px;
 }
 
 .drop-hint {
@@ -63,99 +68,282 @@ body,
   backdrop-filter: blur(6px);
 }
 
-.info-bar {
-  position: absolute;
+.orb-hud {
+  position: fixed;
+  z-index: 20;
   top: 12px;
-  width: calc(100% - 30px);
-  padding: 10px 14px;
-  border-radius: 12px;
-  color: #f5f7ff;
-  font-size: 14px;
-  color: black;
-  background-color: rgb(255, 255, 255);
+  left: 12px;
+  right: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(150px, 245px) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  color: #211d18;
+  font-family: 'Times New Roman', Times, serif;
   pointer-events: none;
-  font-family: 'Courier New', Courier, monospace;
-  
+}
+
+.orb-hud button,
+.orb-hud label,
+.orb-hud-footer button { pointer-events: auto; }
+
+.orb-hud__home,
+.orb-hud__identity,
+.orb-hud__controls,
+.orb-hud__upload,
+.orb-hud-footer__about,
+.orb-hud-footer__account {
+  box-sizing: border-box;
+  color: #211d18;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(33, 29, 24, 0.72);
+  box-shadow: 1px 1px 0 rgba(33, 29, 24, 0.18);
+  backdrop-filter: blur(9px);
+}
+
+.orb-hud__home,
+.orb-hud__upload {
+  min-height: 42px;
+  padding: 8px 11px;
+  border-radius: 3px;
+  font: 700 14px/1 'Times New Roman', Times, serif;
+  cursor: pointer;
+}
+
+.orb-hud__home {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.info-bar-bottom {
-  top: calc(100dvh - 66px);
-  color: black;
-  background-color: transparent !important;
-  justify-content: space-between;
+.orb-hud__home span:first-child { font-family: ui-monospace, monospace; }
+
+.orb-hud__identity {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  min-height: 42px;
+  padding: 6px 10px;
+  border-radius: 3px;
+  text-align: left;
 }
 
-.info-bar-content span {
-  font-weight: 400;
-  font-style: italic;
+.orb-hud__identity span {
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
 }
 
-.info-bar-content {
-  border: 1px solid black;
-  background-color: rgb(255, 255, 255);
-  padding: 10px 14px;
-  border-radius: 4px;
+.orb-hud__identity strong {
+  overflow: hidden;
+  font: italic 12px/1.25 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.orb-hud__controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px 12px;
+  min-height: 42px;
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.orb-hud__presence { position: relative; }
+
+.orb-hud__presence-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px;
+  color: inherit;
+  background: none;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.orb-hud__status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b18a32;
+  box-shadow: 0 0 0 2px rgba(177, 138, 50, 0.16);
+}
+
+.orb-hud__status-dot.is-connected {
+  background: #4e942f;
+  box-shadow: 0 0 0 2px rgba(78, 148, 47, 0.16);
+}
+
+.orb-hud__presence-popover {
+  position: absolute;
+  top: calc(100% + 11px);
+  left: 50%;
+  width: max-content;
+  max-width: min(280px, 80vw);
+  transform: translateX(-50%);
+  padding: 6px 9px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #211d18;
+  font-size: 11px;
+  text-align: center;
+}
+
+.orb-hud__toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.orb-hud__toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.orb-hud__toggle-track {
+  position: relative;
+  width: 22px;
+  height: 12px;
+  box-sizing: border-box;
+  border: 1px solid #211d18;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.orb-hud__toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #211d18;
+}
+
+.orb-hud__toggle input:checked + .orb-hud__toggle-track { background: #fff3b0; }
+.orb-hud__toggle input:checked + .orb-hud__toggle-track::after { transform: translateX(10px); }
+.orb-hud__toggle input:focus-visible + .orb-hud__toggle-track { outline: 2px solid #0645ad; outline-offset: 2px; }
+
+.orb-hud__speeds {
+  display: flex;
+  border: 1px solid rgba(33, 29, 24, 0.5);
+}
+
+.orb-hud__speeds button {
+  padding: 2px 5px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.45);
+  border: 0;
+  border-right: 1px solid rgba(33, 29, 24, 0.35);
+  font: 10px/1.2 ui-monospace, monospace;
+  cursor: pointer;
+}
+
+.orb-hud__speeds button:last-child { border-right: 0; }
+.orb-hud__speeds button.is-active { background: #fff3b0; font-weight: 700; }
+
+.orb-hud__upload {
+  background: rgba(255, 243, 176, 0.84);
+}
+
+.orb-hud__upload:hover,
+.orb-hud__home:hover { background: white; }
+
+.orb-hud__file-input { display: none; }
+
+.orb-hud-footer {
+  position: fixed;
+  z-index: 20;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: 'Times New Roman', Times, serif;
+  pointer-events: none;
+}
+
+.orb-hud-footer__about,
+.orb-hud-footer__account {
+  min-height: 32px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.orb-hud-footer__about {
+  padding: 5px 12px;
+  color: #0645ad;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.orb-hud-footer__account {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 12px;
-
-  @media (max-width: 420px) {
-    padding: 10px 0px;
-  }
+  gap: 4px 8px;
+  padding: 5px 7px 5px 12px;
 }
 
-.info-bar-bottom .info-bar-content {
-  min-height: 32px !important;
-  box-sizing: border-box !important;
-  padding: 0 14px !important;
-  border-radius: 50px;
-  row-gap: 0px;
-  border: 1px dashed black;
-}
-
-.about-button {
-  cursor: pointer;
-  pointer-events: auto;
-  color: #0000ee;
+.orb-hud-footer__account button {
+  padding: 2px 5px;
+  color: #0645ad;
+  background: none;
+  border: 0;
+  font: inherit;
   text-decoration: underline;
+  cursor: pointer;
 }
 
-.info-bar-content-left,
-.info-bar-content-right {
-  white-space: nowrap;
-  font-size: 14px;
-  padding: 10px 14px;
-  border-radius: 4px;
-  font-style: italic;
-  height: 48px;
-  box-sizing: border-box;
-  line-height: 24px;
-  transform: translateY(calc(100dvh - 80px));
+.orb-hud-footer__account button.is-accent {
+  color: #211d18;
+  background: #fff3b0;
+  border: 1px solid rgba(33, 29, 24, 0.62);
+  border-radius: 999px;
+  text-decoration: none;
 }
 
-.info-bar label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  pointer-events: auto;
-  font-weight: 600;
+.orb-hud button:focus-visible,
+.orb-hud-footer button:focus-visible {
+  outline: 2px solid #0645ad;
+  outline-offset: 2px;
 }
 
-.info-bar input[type='checkbox'] {
-  pointer-events: auto;
+@media (max-width: 760px) {
+  .orb-hud {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .orb-hud__home { grid-column: 1; grid-row: 1; width: fit-content; }
+  .orb-hud__upload { grid-column: 2; grid-row: 1; }
+  .orb-hud__identity { grid-column: 1 / -1; grid-row: 2; min-height: 30px; flex-direction: row; align-items: center; gap: 8px; }
+  .orb-hud__controls { grid-column: 1 / -1; grid-row: 3; }
+
+  .orb-hud-footer__account > span:first-child { display: none; }
 }
 
-.info-line {
-  pointer-events: auto;
-  display: flex;
-  gap: 6px;
+@media (max-width: 420px) {
+  .orb-hud { top: 8px; left: 8px; right: 8px; }
+  .orb-hud__identity strong { font-size: 11px; }
+  .orb-hud__controls { gap: 6px 10px; padding-inline: 7px; }
+  .orb-hud-footer { right: 8px; bottom: 8px; left: 8px; }
+  .orb-hud-footer__about { padding-inline: 10px; }
+  .orb-hud-footer__account { padding-left: 7px; }
 }
 
 .pin-tooltip {

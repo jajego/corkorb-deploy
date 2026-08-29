@@ -24,13 +24,19 @@ async def get_orb_by_id(session: AsyncSession, orb_id: str, lock: bool = False) 
   return result.scalar_one_or_none()
 
 
-async def create_orb(session: AsyncSession, max_papers: int = 50, orb_id: Optional[str] = None) -> Orb:
+async def create_orb(
+  session: AsyncSession,
+  max_papers: int = 50,
+  shape: str = "sphere",
+  orb_id: Optional[str] = None,
+) -> Orb:
   """
   Create a new orb with a unique passphrase ID.
   
   Args:
     session: Database session
     max_papers: Maximum number of papers allowed on the orb
+    shape: Cork surface shape
     orb_id: Optional specific ID to use (if provided and unique)
   
   Returns:
@@ -41,7 +47,7 @@ async def create_orb(session: AsyncSession, max_papers: int = 50, orb_id: Option
     existing = await get_orb_by_id(session, orb_id)
     if existing:
       raise ValueError(f"Orb ID '{orb_id}' already exists")
-    orb = Orb(id=orb_id, max_papers=max_papers)
+    orb = Orb(id=orb_id, max_papers=max_papers, shape=shape)
   else:
     # Generate a unique passphrase
     # First, get all existing orb IDs to check against
@@ -51,7 +57,7 @@ async def create_orb(session: AsyncSession, max_papers: int = 50, orb_id: Option
     
     # Generate unique passphrase
     passphrase = generate_unique_passphrase(existing_ids)
-    orb = Orb(id=passphrase, max_papers=max_papers)
+    orb = Orb(id=passphrase, max_papers=max_papers, shape=shape)
   
   session.add(orb)
   await session.flush()

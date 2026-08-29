@@ -1,10 +1,11 @@
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '@clerk/react'
 
 import { OrbScene } from '../scenes/orb/OrbScene'
 import { SplashPage } from '../pages/SplashPage'
 import { AuthPage } from '../pages/AuthPage'
 import { TestRoutes } from './TestRoutes'
+import type { CorkShape } from '../types/orb'
 
 function HomeRoute() {
   const { isSignedIn, isLoaded } = useAuth()
@@ -35,10 +36,17 @@ function HomeRoute() {
 
 function OrbRoute() {
   const { orbId } = useParams<{ orbId: string }>()
+  const location = useLocation()
   if (!orbId) {
     return <Navigate to="/" replace />
   }
-  return <OrbScene orbId={orbId} />
+
+  const routeShape = (location.state as { shape?: CorkShape } | null)?.shape
+  const initialShape = routeShape === 'sphere' || routeShape === 'cube' || routeShape === 'pyramid'
+    ? routeShape
+    : undefined
+
+  return <OrbScene key={orbId} orbId={orbId} initialShape={initialShape} />
 }
 
 export function App() {

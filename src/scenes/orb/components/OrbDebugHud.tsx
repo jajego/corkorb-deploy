@@ -53,331 +53,116 @@ export function OrbDebugHud({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showUsernames, setShowUsernames] = useState(false)
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click()
-  }
-
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (file) {
-      onUploadPhoto(file)
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    if (file) onUploadPhoto(file)
+    event.target.value = ''
   }
+
+  const peopleLabel = wsStatus === 'connected'
+    ? `${connectedUsersCount} ${connectedUsersCount === 1 ? 'person' : 'people'} here`
+    : 'Connecting'
 
   return (
     <>
-    <div className="info-bar">
-      <button
-        type="button"
-        onClick={() => navigate('/')}
-        style={{
-          padding: '11px 12px',
-          fontSize: '14px',
-          fontFamily: 'inherit',
-          fontWeight: 600,
-          border: '1px solid black',
-          borderRadius: '4px',
-          backgroundColor: 'white',
-          color: 'black',
-          cursor: 'pointer',
-          pointerEvents: 'auto',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = '#f5f5f5'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = 'white'
-        }}
-      >
-        Home
-      </button>
-      <div className="info-bar-content">
-        <strong>
-          CorkOrb <span>{orbId}</span>
-        </strong>
-        <strong>|</strong>
-        <div className="info-line">
-          {wsStatus === 'connected' ? (
-            <>
-              <strong>Connected</strong>{' '}
-              <span
-                style={{
-                  marginLeft: '4px',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-                onClick={() => setShowUsernames(!showUsernames)}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.fontWeight = '600'
-                  e.currentTarget.style.textDecoration = 'underline'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.fontWeight = '400'
-                  e.currentTarget.style.textDecoration = 'none'
-                }}
-              >
-                {showUsernames ? (
-                  <>
-                    {connectedUsernames.length > 0 ? (
-                      connectedUsernames.join(', ')
-                    ) : (
-                      'No users'
-                    )}
-                    {anonymousUsersCount > 0 && <> ({anonymousUsersCount} anonymous)</>}
-                  </>
-                ) : (
-                  <>
-                    {connectedUsersCount} {connectedUsersCount === 1 ? 'user' : 'users'}
-                    {anonymousUsersCount > 0 && <> ({anonymousUsersCount} anonymous)</>}
-                  </>
-                )}
-              </span>
-            </>
-          ) : (
-            <span>Connecting...</span>
-          )}
+      <header className="orb-hud">
+        <button type="button" className="orb-hud__home" onClick={() => navigate('/')}>
+          <span aria-hidden="true">←</span>
+          <span>CorkOrb</span>
+        </button>
+
+        <div className="orb-hud__identity">
+          <span>Shared cork</span>
+          <strong title={orbId}>{orbId}</strong>
         </div>
-        <label>
-          <strong>|</strong>
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={autoRotateEnabled}
-            onChange={(event) => onAutoRotateChange(event.target.checked)}
-          />
-          Auto rotate
-        </label>
-        {autoRotateEnabled && (
-          <>
+
+        <div className="orb-hud__controls">
+          <div className="orb-hud__presence">
             <button
               type="button"
-              onClick={() => onAutoRotateSpeedChange(0.05)}
-              style={{
-                padding: '2px 8px',
-                fontSize: '12px',
-                fontFamily: 'inherit',
-                fontWeight: autoRotateSpeed === 0.05 ? 700 : 500,
-                border: '1px dotted black',
-                borderRadius: '4px',
-                backgroundColor: autoRotateSpeed === 0.05 ? '#f0f0f0' : 'white',
-                color: 'black',
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-              }}
-              onMouseEnter={(e) => {
-                if (autoRotateSpeed !== 0.05) {
-                  e.currentTarget.style.backgroundColor = '#f5f5f5'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (autoRotateSpeed !== 0.05) {
-                  e.currentTarget.style.backgroundColor = 'white'
-                }
-              }}
+              className="orb-hud__presence-button"
+              aria-expanded={showUsernames}
+              onClick={() => setShowUsernames((visible) => !visible)}
             >
-              1x
+              <span className={`orb-hud__status-dot${wsStatus === 'connected' ? ' is-connected' : ''}`} />
+              {peopleLabel}
             </button>
-            <button
-              type="button"
-              onClick={() => onAutoRotateSpeedChange(0.1)}
-              style={{
-                padding: '2px 8px',
-                fontSize: '12px',
-                fontFamily: 'inherit',
-                fontWeight: autoRotateSpeed === 0.1 ? 700 : 500,
-                border: '1px dotted black',
-                borderRadius: '4px',
-                backgroundColor: autoRotateSpeed === 0.1 ? '#f0f0f0' : 'white',
-                color: 'black',
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-              }}
-              onMouseEnter={(e) => {
-                if (autoRotateSpeed !== 0.1) {
-                  e.currentTarget.style.backgroundColor = '#f5f5f5'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (autoRotateSpeed !== 0.1) {
-                  e.currentTarget.style.backgroundColor = 'white'
-                }
-              }}
-            >
-              2x
-            </button>
-            <button
-              type="button"
-              onClick={() => onAutoRotateSpeedChange(0.25)}
-              style={{
-                padding: '2px 8px',
-                fontSize: '12px',
-                fontFamily: 'inherit',
-                fontWeight: autoRotateSpeed === 0.25 ? 700 : 500,
-                border: '1px dotted black',
-                borderRadius: '4px',
-                backgroundColor: autoRotateSpeed === 0.25 ? '#f0f0f0' : 'white',
-                color: 'black',
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-              }}
-              onMouseEnter={(e) => {
-                if (autoRotateSpeed !== 0.25) {
-                  e.currentTarget.style.backgroundColor = '#f5f5f5'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (autoRotateSpeed !== 0.25) {
-                  e.currentTarget.style.backgroundColor = 'white'
-                }
-              }}
-            >
-              5x
-            </button>
-          </>
-        )}
-        <label>
-          <strong>|</strong>
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={showAllTooltips}
-            onChange={(event) => onShowAllTooltipsChange(event.target.checked)}
-          />
-          Show all tooltips
-        </label>
+            {showUsernames && (
+              <div className="orb-hud__presence-popover" role="status">
+                {connectedUsernames.length > 0 ? connectedUsernames.join(', ') : 'No named visitors'}
+                {anonymousUsersCount > 0 && ` · ${anonymousUsersCount} anonymous`}
+              </div>
+            )}
+          </div>
+
+          <label className="orb-hud__toggle" title="Rotate the cork when idle">
+            <input
+              type="checkbox"
+              checked={autoRotateEnabled}
+              onChange={(event) => onAutoRotateChange(event.target.checked)}
+            />
+            <span className="orb-hud__toggle-track" aria-hidden="true" />
+            <span>Drift</span>
+          </label>
+
+          {autoRotateEnabled && (
+            <div className="orb-hud__speeds" aria-label="Drift speed">
+              {([['1×', 0.05], ['2×', 0.1], ['5×', 0.25]] as const).map(([label, speed]) => (
+                <button
+                  key={speed}
+                  type="button"
+                  className={autoRotateSpeed === speed ? 'is-active' : ''}
+                  aria-pressed={autoRotateSpeed === speed}
+                  onClick={() => onAutoRotateSpeedChange(speed)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <label className="orb-hud__toggle" title="Keep every image label visible">
+            <input
+              type="checkbox"
+              checked={showAllTooltips}
+              onChange={(event) => onShowAllTooltipsChange(event.target.checked)}
+            />
+            <span className="orb-hud__toggle-track" aria-hidden="true" />
+            <span>Labels</span>
+          </label>
+        </div>
+
+        <button type="button" className="orb-hud__upload" onClick={() => fileInputRef.current?.click()}>
+          <span aria-hidden="true">＋</span>
+          <span>Pin image</span>
+        </button>
         <input
           ref={fileInputRef}
+          className="orb-hud__file-input"
           type="file"
           accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-          style={{ display: 'none' }}
           onChange={handleFileChange}
           aria-label="Upload image"
         />
-        
-      </div>
-      <button
-          type="button"
-          onClick={handleUploadClick}
-          style={{
-            padding: '11px 12px',
-            fontSize: '14px',
-            fontFamily: 'inherit',
-            fontWeight: 600,
-            border: '1px solid black',
-            borderRadius: '4px',
-            backgroundColor: 'white',
-            color: 'black',
-            cursor: 'pointer',
-            pointerEvents: 'auto',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#f5f5f5'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'white'
-          }}
-        >
-          Upload
-        </button>
-    </div>
-    <div className="info-bar info-bar-bottom">
-      <div className="info-bar-content about-button" onClick={onShowAbout}>
-        about
-      </div>
-      <div className="info-bar-content">
-        {isSignedIn ? (
-          <>
-            Logged in as <span style={{ fontWeight: 600 }}>{username}</span>{' '}
-            |
-            <button
-              type="button"
-              onClick={() => {
-                onSignOut()
-              }}
-              style={{
-                padding: '2px 6px',
-                fontSize: '14px',
-                fontFamily: 'inherit',
-                fontWeight: 500,
-                border: 'none',
-                background: 'none',
-                color: 'black',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                pointerEvents: 'auto',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.fontWeight = '600'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.fontWeight = '500'
-              }}
-            >
-              Sign Out
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={onNavigateToSignIn}
-              style={{
-                padding: '2px 6px',
-                fontSize: '14px',
-                fontFamily: 'inherit',
-                fontWeight: 500,
-                border: 'none',
-                background: 'none',
-                color: 'black',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                pointerEvents: 'auto',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.fontWeight = '600'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.fontWeight = '500'
-              }}
-            >
-              Login
-            </button>
-            or
-            <button
-              type="button"
-              onClick={onNavigateToSignUp}
-              style={{
-                padding: '2px 6px',
-                fontSize: '14px',
-                fontFamily: 'inherit',
-                fontWeight: 500,
-                border: 'none',
-                background: 'none',
-                color: 'black',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                pointerEvents: 'auto',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.fontWeight = '600'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.fontWeight = '500'
-              }}
-            >
-              Sign Up
-            </button>
-            to pin images to the CorkOrb.
-          </>
-        )}
-      </div>
-    </div>
+      </header>
+
+      <footer className="orb-hud-footer">
+        <button type="button" className="orb-hud-footer__about" onClick={onShowAbout}>About</button>
+        <div className="orb-hud-footer__account">
+          {isSignedIn ? (
+            <>
+              <span>Signed in as <strong>{username}</strong></span>
+              <button type="button" onClick={() => onSignOut()}>Sign out</button>
+            </>
+          ) : (
+            <>
+              <span>Want to add something?</span>
+              <button type="button" onClick={onNavigateToSignIn}>Log in</button>
+              <button type="button" className="is-accent" onClick={onNavigateToSignUp}>Join</button>
+            </>
+          )}
+        </div>
+      </footer>
     </>
   )
 }
-

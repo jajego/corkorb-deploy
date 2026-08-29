@@ -8,6 +8,7 @@ import type { ServerPaper } from '../../../types/websocket'
 import type { PinInstance, PlacedPaper } from '../../../types/orb'
 
 const logger = createLogger('OrbScene')
+const pendingHydrations = new Map<string, Promise<PlacedPaper | null>>()
 
 export function applyLayerOffsetToGeometry(
   positions: Float32Array | undefined,
@@ -25,7 +26,7 @@ export function applyLayerOffsetToGeometry(
   return positions
 }
 
-export async function serverPaperToPlacedPaper(serverPaper: ServerPaper): Promise<PlacedPaper | null> {
+async function createPlacedPaper(serverPaper: ServerPaper): Promise<PlacedPaper | null> {
   try {
     const { texture, aspect } = await loadTextureFromUrl(serverPaper.source_url)
     
@@ -57,6 +58,13 @@ export async function serverPaperToPlacedPaper(serverPaper: ServerPaper): Promis
         serverPaper.pin.position.z,
       ]),
       color: serverPaper.pin.color,
+      normal: serverPaper.pin.normal
+        ? arrayToVector([
+            serverPaper.pin.normal.x,
+            serverPaper.pin.normal.y,
+            serverPaper.pin.normal.z,
+          ])
+        : undefined,
     }
     
     return {
@@ -82,6 +90,28 @@ export async function serverPaperToPlacedPaper(serverPaper: ServerPaper): Promis
     logger.error('Failed to convert server paper to placed paper', error)
     return null
   }
+}
+
+export function serverPaperToPlacedPaper(serverPaper: ServerPaper): Promise<PlacedPaper | null> {
+  const key = `${serverPaper.id}:${serverPaper.source_url}`
+  const pending = pendingHydrations.get(key)
+  if (pending) return pending
+
+  const hydration = createPlacedPaper(serverPaper).finally(() => pendingHydrations.delete(key))
+  pendingHydrations.set(key, hydration)
+  return hydration
+}
+
+export async function hydrateServerPapers(
+  serverPapers: ServerPaper[],
+  existingPapers: PlacedPaper[],
+): Promise<PlacedPaper[]> {
+  const existingById = new Map(existingPapers.map((paper) => [paper.id, paper]))
+  const hydrated = await Promise.all(serverPapers.map((serverPaper) => {
+    const existing = existingById.get(serverPaper.id)
+    return existing?.sourceUrl === serverPaper.source_url ? existing : serverPaperToPlacedPaper(serverPaper)
+  }))
+  return hydrated.filter((paper): paper is PlacedPaper => paper !== null)
 }
 
 export async function decodeTexture(file: File): Promise<{ texture: THREE.Texture; aspect: number }> {

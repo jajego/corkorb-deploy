@@ -1,3 +1,5 @@
+import type { CorkShape } from './orb'
+
 /**
  * TypeScript type definitions for WebSocket messages and related types.
  */
@@ -117,6 +119,7 @@ export interface ServerOrb {
   updated_at: string
   last_accessed: string | null
   max_papers: number
+  shape: CorkShape
 }
 
 export interface ServerPaperData {
@@ -142,6 +145,6 @@ export interface ServerPaper {
   pin: {
     position: { x: number; y: number; z: number }
     color: string
+    normal?: { x: number; y: number; z: number } | null
   }
 }
-

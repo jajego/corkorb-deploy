@@ -165,12 +165,6 @@ export function useOrbWebSocket({
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
           
-          // Log all incoming paper_created messages for debugging
-          if (message.type === 'paper_created' || (message.type === 'success' && message.data && typeof message.data === 'object' && 'type' in message.data && message.data.type === 'paper_created')) {
-            const paperId = message.type === 'paper_created' ? message.paper.id : (message.data as any).paper.id
-            logger.debug(`[WebSocket] Received message with type="${message.type}" for paper: ${paperId}`)
-          }
-
           // Handle ping/pong
           if (message.type === 'ping') {
             ws.send(JSON.stringify({ type: 'pong' }))
@@ -244,48 +238,28 @@ export function useOrbWebSocket({
             }
 
             case 'success': {
-              // Success messages can contain wrapped events (paper_created, paper_deleted, etc.)
-              // This happens both for responses to requests (with request_id) and broadcasts
               const wrappedData = message.data
-              if (wrappedData && typeof wrappedData === 'object' && 'type' in wrappedData) {
-                if (wrappedData.type === 'paper_created' && 'paper' in wrappedData) {
-                  logger.debug(`Received paper_created message (wrapped in success) for paper: ${(wrappedData.paper as ServerPaper).id}`)
-                  callbacks.onPaperCreated?.(wrappedData.paper as ServerPaper)
-                } else if (wrappedData.type === 'paper_deleted' && 'paper_id' in wrappedData) {
-                  const reason = (wrappedData as any).reason as string | undefined
-                  logger.info(`[WebSocket] Received paper_deleted message (wrapped) for paper: ${wrappedData.paper_id}, reason: ${reason}`)
-                  callbacks.onPaperDeleted?.(wrappedData.paper_id as string, reason)
-                } else if (wrappedData.type === 'user_joined' && 'user_id' in wrappedData) {
-                  const userId = wrappedData.user_id as string
-                  const username = (wrappedData as any).username as string | null | undefined
-                  
-                  // Track our own user_id when we receive our own user_joined message
-                  if (!currentUserIdRef.current) {
-                    currentUserIdRef.current = userId
+              switch (wrappedData.type) {
+                case 'paper_created':
+                  callbacks.onPaperCreated?.(wrappedData.paper)
+                  break
+                case 'paper_deleted':
+                  callbacks.onPaperDeleted?.(wrappedData.paper_id, wrappedData.reason)
+                  break
+                case 'user_joined':
+                  if (!currentUserIdRef.current) currentUserIdRef.current = wrappedData.user_id
+                  if (wrappedData.user_id !== currentUserIdRef.current) {
+                    callbacks.onUserJoined?.(wrappedData.user_id, wrappedData.username)
                   }
-                  
-                  // Only call onUserJoined callback for OTHER users (not ourselves)
-                  // Count is updated by backend via connected_users_count message
-                  if (currentUserIdRef.current && userId === currentUserIdRef.current) {
-                    // This is our own join - don't show toast
-                  } else {
-                    callbacks.onUserJoined?.(userId, username)
-                  }
-                } else if (wrappedData.type === 'user_left' && 'user_id' in wrappedData) {
-                  const userId = wrappedData.user_id as string
-                  const username = (wrappedData as any).username as string | null | undefined
-                  
-                  // Count is updated by backend via connected_users_count message
-                  callbacks.onUserLeft?.(userId, username)
-                } else if (wrappedData.type === 'view_center_update' && 'user_id' in wrappedData && 'view_center' in wrappedData) {
-                  callbacks.onViewCenterUpdate?.(wrappedData.user_id as string, wrappedData.view_center as ViewCenter)
-                } else if (wrappedData.type === 'orb_created') {
-                  // Orb created event (not used in OrbScene, but handled for completeness)
-                  logger.debug('Orb created event received')
-                } else if (wrappedData.type === 'orb_deleted') {
-                  // Orb deleted event (not used in OrbScene, but handled for completeness)
-                  logger.debug('Orb deleted event received')
-                }
+                  break
+                case 'user_left':
+                  callbacks.onUserLeft?.(wrappedData.user_id, wrappedData.username)
+                  break
+                case 'view_center_update':
+                  callbacks.onViewCenterUpdate?.(wrappedData.user_id, wrappedData.view_center)
+                  break
+                default:
+                  break
               }
               break
             }
@@ -565,4 +539,3 @@ export function useOrbWebSocket({
     disconnect,
   }
 }
-

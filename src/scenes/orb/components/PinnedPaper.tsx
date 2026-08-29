@@ -6,12 +6,15 @@ import * as THREE from 'three'
 
 import {
   PAPER_OFFSET,
+  POLYHEDRON_PAPER_OFFSET,
   PAPER_SEGMENTS_X,
   PAPER_SEGMENTS_Y,
   PAPER_SPHERE_RADIUS,
 } from './papers/constants'
 import { getPaperBumpTexture } from './papers/paperTexture'
 import { formatTimestamp } from '../../../utils/formatTimestamp'
+import type { CorkShape } from '../../../types/orb'
+import { buildPolyhedronPaperGeometry } from '../utils/polyhedronPaper'
 
 const radius = PAPER_SPHERE_RADIUS + PAPER_OFFSET
 const vertexPosition = new THREE.Vector3()
@@ -25,12 +28,14 @@ export type PinData = {
   id: string
   position: Vector3Like
   color: string
+  normal?: Vector3Like
 }
 
 type PinnedPaperProps = {
   texture: THREE.Texture | null
   aspect: number
   scale: number
+  shape: CorkShape
   center: Vector3Like
   quaternion: QuaternionLike
   right?: Vector3Like
@@ -42,7 +47,7 @@ type PinnedPaperProps = {
   rotation?: number
   interactive?: boolean
   showTooltip?: boolean
-  onAddPin?: (worldPosition: THREE.Vector3) => void
+  onAddPin?: (worldPosition: THREE.Vector3, worldNormal: THREE.Vector3) => void
   onPinHoverChange?: (hovering: boolean) => void
   onRemove?: () => void
   userId?: string
@@ -59,6 +64,7 @@ export function PinnedPaper({
   texture,
   aspect,
   scale,
+  shape,
   center,
   quaternion,
   right,
@@ -81,13 +87,14 @@ export function PinnedPaper({
   const meshRef = useRef<THREE.Mesh>(null)
   const geometry = useMemo(
     () => {
+      if (shape !== 'sphere') return new THREE.BufferGeometry()
       const plane = new THREE.PlaneGeometry(1, 1, PAPER_SEGMENTS_X, PAPER_SEGMENTS_Y)
       const vertexCount = (PAPER_SEGMENTS_X + 1) * (PAPER_SEGMENTS_Y + 1)
       const colors = new Float32Array(vertexCount * 3)
       plane.setAttribute('color', new THREE.BufferAttribute(colors, 3))
       return plane
     },
-    []
+    [shape]
   )
   const materialRef = useRef<THREE.MeshStandardMaterial>(null)
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null)
@@ -120,7 +127,12 @@ export function PinnedPaper({
     return new THREE.Quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
   }, [quaternion])
 
-  const surfaceNormal = useMemo(() => centerVec.clone().normalize(), [centerVec])
+  const surfaceNormal = useMemo(
+    () => shape === 'sphere'
+      ? centerVec.clone().normalize()
+      : new THREE.Vector3(0, 0, 1).applyQuaternion(quaternionValue).normalize(),
+    [shape, centerVec, quaternionValue]
+  )
 
   const basisRight = useMemo(() => {
     const vector = right
@@ -148,17 +160,42 @@ export function PinnedPaper({
     }
     vector.normalize()
 
-    const orthogonal = basisRight.clone().cross(centerVec.clone().normalize()).normalize()
+    const orthogonal = surfaceNormal.clone().cross(basisRight).normalize()
     if (vector.dot(orthogonal) < 0) vector.multiplyScalar(-1)
     if (!up && rotation !== 0) {
       vector.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(surfaceNormal, rotation)).normalize()
     }
     return vector
-  }, [up, quaternionValue, basisRight, centerVec, rotation, surfaceNormal])
+  }, [up, quaternionValue, basisRight, rotation, surfaceNormal])
   const halfWidth = useMemo(() => scale * aspect, [scale, aspect])
   const halfHeight = useMemo(() => scale, [scale])
 
   useEffect(() => {
+    if (shape !== 'sphere') {
+      const paperOffset = POLYHEDRON_PAPER_OFFSET + layerOffset
+      const surfaceCenter = centerVec.clone().addScaledVector(surfaceNormal, -paperOffset)
+      const folded = buildPolyhedronPaperGeometry(
+        shape,
+        surfaceCenter,
+        surfaceNormal,
+        basisRight,
+        basisUp,
+        halfWidth,
+        halfHeight,
+        paperOffset
+      )
+      geometry.setAttribute('position', new THREE.BufferAttribute(folded.positions, 3))
+      geometry.setAttribute('normal', new THREE.BufferAttribute(folded.normals, 3))
+      geometry.setAttribute('uv', new THREE.BufferAttribute(folded.uvs, 2))
+      geometry.setAttribute('color', new THREE.BufferAttribute(folded.colors, 3))
+      geometry.setIndex(
+        folded.indices ? new THREE.BufferAttribute(folded.indices, 1) : null
+      )
+      geometry.computeBoundingSphere()
+      geometry.computeBoundingBox()
+      return
+    }
+
     const positionsAttr = geometry.attributes.position as THREE.BufferAttribute
     const normalsAttr = geometry.attributes.normal as THREE.BufferAttribute
     const colorsAttr = geometry.attributes.color as THREE.BufferAttribute
@@ -219,7 +256,19 @@ export function PinnedPaper({
     colorsAttr.needsUpdate = true
     geometry.computeBoundingSphere()
     geometry.computeBoundingBox()
-  }, [geometry, centerVec, basisRight, basisUp, halfWidth, halfHeight, positions, normals, layerOffset])
+  }, [
+    geometry,
+    shape,
+    centerVec,
+    surfaceNormal,
+    basisRight,
+    basisUp,
+    halfWidth,
+    halfHeight,
+    positions,
+    normals,
+    layerOffset,
+  ])
 
   useEffect(() => {
     const material = materialRef.current
@@ -247,7 +296,10 @@ export function PinnedPaper({
   const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
     if (!interactive || !onAddPin) return
     event.stopPropagation()
-    onAddPin(event.point.clone())
+    const worldNormal = event.face?.normal
+      ? event.face.normal.clone().transformDirection(event.object.matrixWorld)
+      : surfaceNormal.clone()
+    onAddPin(event.point.clone(), worldNormal.normalize())
   }
 
   const pinMeshes = useMemo(() => {
@@ -257,16 +309,21 @@ export function PinnedPaper({
           ? pin.position.clone()
           : new THREE.Vector3(pin.position.x, pin.position.y, pin.position.z)
 
-      const offsetPosition = basePosition.clone()
-      pinNormal
+      const explicitNormal = pin.normal
+        ? pin.normal instanceof THREE.Vector3
+          ? pin.normal.clone()
+          : new THREE.Vector3(pin.normal.x, pin.normal.y, pin.normal.z)
+        : null
+      const normal = explicitNormal ?? pinNormal
         .set(0, 0, 1)
         .applyQuaternion(quaternionValue)
         .normalize()
-      offsetPosition.addScaledVector(pinNormal, PIN_OFFSET)
+        .clone()
+      const offsetPosition = basePosition.clone().addScaledVector(normal, PIN_OFFSET)
 
       const color = pin.color ?? '#ff4d4f'
 
-      return { id: pin.id, position: offsetPosition, basePosition, color }
+      return { id: pin.id, position: offsetPosition, basePosition, color, normal: explicitNormal }
     })
   }, [pins, quaternionValue])
 
@@ -305,7 +362,11 @@ export function PinnedPaper({
       // Vector from pin position to camera position
       pinToCamera.copy(camera.position).sub(pinMesh.basePosition).normalize()
       // Surface normal at pin location (pointing outward from orb center)
-      tempSurfaceNormal.copy(pinMesh.basePosition).normalize()
+      if (pinMesh.normal) {
+        tempSurfaceNormal.copy(pinMesh.normal).normalize()
+      } else {
+        tempSurfaceNormal.copy(pinMesh.basePosition).normalize()
+      }
       // Dot product: positive = facing camera, negative = back side
       // Using a threshold (-0.3) instead of 0 allows tooltips to stay visible
       // even when pin is slightly angled away from camera but still in viewport
@@ -373,7 +434,7 @@ export function PinnedPaper({
     }
   })
 
-  const usesWorldSpaceGeometry = Boolean(positions && normals)
+  const usesWorldSpaceGeometry = shape !== 'sphere' || Boolean(positions && normals)
 
   return (
     <group>

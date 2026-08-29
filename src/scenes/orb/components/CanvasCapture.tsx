@@ -8,9 +8,11 @@ import { downloadBlob, type CaptureOptions, type CaptureResult } from '../../../
  * Must be rendered inside a Canvas component.
  */
 export function CanvasCapture({ 
-  onCaptureReady 
+  onCaptureReady,
+  radius = 1,
 }: { 
-  onCaptureReady: (captureFn: (options: Omit<CaptureOptions, 'canvas'> & { onProgress?: (progress: number) => void }) => Promise<void>) => void 
+  onCaptureReady: (captureFn: (options: Omit<CaptureOptions, 'canvas'> & { onProgress?: (progress: number) => void }) => Promise<void>) => void
+  radius?: number
 }) {
   const { gl, camera, size } = useThree()
 
@@ -23,7 +25,7 @@ export function CanvasCapture({
      * to ensure the full orb is captured even when rotated at different angles.
      */
     const calculateOrbBounds = (): { x: number; y: number; width: number; height: number } => {
-      const orbRadius = 1
+      const orbRadius = radius
       const orbCenter = new THREE.Vector3(0, 0, 0)
       
       // Project orb center to screen space
@@ -170,7 +172,6 @@ export function CanvasCapture({
         const startTime = performance.now()
         let lastFrameTime = startTime
         let recordingActive = true
-        let frameCount = 0
         
         const captureFrame = (currentTime: DOMHighResTimeStamp) => {
           // Check if we should stop
@@ -215,7 +216,6 @@ export function CanvasCapture({
             const progress = Math.min(elapsed / duration, 1)
             onProgress?.(progress)
             
-            frameCount++
           }
           
           // Schedule next frame
@@ -249,7 +249,7 @@ export function CanvasCapture({
     }
     
     onCaptureReady(capture)
-  }, [gl, camera, size, onCaptureReady])
+  }, [gl, camera, size, onCaptureReady, radius])
 
   return null // This component doesn't render anything
 }

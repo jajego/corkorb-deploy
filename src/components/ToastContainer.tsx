@@ -4,6 +4,7 @@ import './Toast.css'
 
 let toastIdCounter = 0
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToast() {
   const [toasts, setToasts] = useState<Toast[]>([])
 

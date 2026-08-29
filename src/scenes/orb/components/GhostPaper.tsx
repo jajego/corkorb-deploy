@@ -4,11 +4,14 @@ import * as THREE from 'three'
 
 import {
   PAPER_OFFSET,
+  POLYHEDRON_PAPER_OFFSET,
   PAPER_SEGMENTS_X,
   PAPER_SEGMENTS_Y,
   PAPER_SPHERE_RADIUS,
 } from './papers/constants'
 import { getPaperBumpTexture } from './papers/paperTexture'
+import type { CorkShape } from '../../../types/orb'
+import { buildPolyhedronPaperGeometry } from '../utils/polyhedronPaper'
 
 const outwardNormal = new THREE.Vector3()
 const tangentRight = new THREE.Vector3()
@@ -19,6 +22,9 @@ const vertexPosition = new THREE.Vector3()
 const vertexDirection = new THREE.Vector3()
 const rayDirection = new THREE.Vector3()
 const rayHit = new THREE.Vector3()
+const pointerNdc = new THREE.Vector2()
+const surfaceRaycaster = new THREE.Raycaster()
+const surfaceNormalMatrix = new THREE.Matrix3()
 const rotationX = new THREE.Quaternion()
 const rotationY = new THREE.Quaternion()
 const rotationCombined = new THREE.Quaternion()
@@ -50,6 +56,8 @@ type GhostPaperProps = {
   pointer: PointerState
   rotation?: number
   layerOffset?: number
+  shape: CorkShape
+  surfaceRef: React.RefObject<THREE.Mesh | null>
   onTransformChange?: (transform: GhostPaperTransform) => void
   onGeometryChange?: (geometry: { positions: Float32Array; normals: Float32Array }) => void
 }
@@ -85,11 +93,13 @@ export function GhostPaper({
   pointer,
   rotation = 0,
   layerOffset = 0,
+  shape,
+  surfaceRef,
   onTransformChange,
   onGeometryChange,
 }: GhostPaperProps) {
   const meshRef = useRef<THREE.Mesh>(null)
-  const geometryRef = useRef<THREE.PlaneGeometry>(null)
+  const geometryRef = useRef<THREE.BufferGeometry>(null)
   const materialRef = useRef<THREE.MeshStandardMaterial>(null)
   const lastTextureRef = useRef<THREE.Texture | null>(null)
   const lastTextureReadyRef = useRef(false)
@@ -113,13 +123,14 @@ export function GhostPaper({
 
   const geometry = useMemo(
     () => {
+      if (shape !== 'sphere') return new THREE.BufferGeometry()
       const plane = new THREE.PlaneGeometry(1, 1, PAPER_SEGMENTS_X, PAPER_SEGMENTS_Y)
       const vertexCount = (PAPER_SEGMENTS_X + 1) * (PAPER_SEGMENTS_Y + 1)
       const colors = new Float32Array(vertexCount * 3)
       plane.setAttribute('color', new THREE.BufferAttribute(colors, 3))
       return plane
     },
-    []
+    [shape]
   )
 
   useFrame(() => {
@@ -145,13 +156,31 @@ export function GhostPaper({
       .sub(camera.position)
       .normalize()
 
-    if (!intersectRaySphere(camera.position, rayDirection, PAPER_SPHERE_RADIUS, rayHit)) {
-      return
+    const surface = surfaceRef.current
+    const paperOffset = (shape === 'sphere' ? PAPER_OFFSET : POLYHEDRON_PAPER_OFFSET) + layerOffset
+    if (shape === 'sphere') {
+      if (!intersectRaySphere(camera.position, rayDirection, PAPER_SPHERE_RADIUS, rayHit)) return
+      outwardNormal.copy(rayHit).normalize()
+      centerPosition
+        .copy(outwardNormal)
+        .multiplyScalar(PAPER_SPHERE_RADIUS + paperOffset)
+    } else {
+      if (!surface) return
+      surface.updateMatrixWorld()
+      pointerNdc.set(pointerX, pointerY)
+      surfaceRaycaster.setFromCamera(pointerNdc, camera)
+      const intersection = surfaceRaycaster.intersectObject(surface, false)[0]
+      if (!intersection?.face) return
+      rayHit.copy(intersection.point)
+      surfaceNormalMatrix.getNormalMatrix(surface.matrixWorld)
+      outwardNormal
+        .copy(intersection.face.normal)
+        .applyNormalMatrix(surfaceNormalMatrix)
+        .normalize()
+      centerPosition
+        .copy(rayHit)
+        .addScaledVector(outwardNormal, paperOffset)
     }
-
-    const radius = PAPER_SPHERE_RADIUS + PAPER_OFFSET + layerOffset
-    outwardNormal.copy(rayHit).normalize()
-    centerPosition.copy(outwardNormal).multiplyScalar(radius)
 
     projectedRight.copy(worldUp).cross(outwardNormal)
     if (projectedRight.lengthSq() < 1e-6) {
@@ -168,47 +197,97 @@ export function GhostPaper({
       tangentUp.applyQuaternion(rotationQuat).normalize()
     }
 
-    const positions = plane.attributes.position as THREE.BufferAttribute
-    const normals = plane.attributes.normal as THREE.BufferAttribute
-    const colors = plane.attributes.color as THREE.BufferAttribute
+    let positions: THREE.BufferAttribute
+    let normals: THREE.BufferAttribute
+    let colors: THREE.BufferAttribute
+    let uvs: THREE.BufferAttribute | null = null
+    let indices: THREE.BufferAttribute | null = null
 
-    let index = 0
-    for (let y = 0; y <= PAPER_SEGMENTS_Y; y++) {
-      const v = (y / PAPER_SEGMENTS_Y - 0.5) * 2
-      for (let x = 0; x <= PAPER_SEGMENTS_X; x++) {
-        const u = (x / PAPER_SEGMENTS_X - 0.5) * 2
+    if (shape === 'sphere') {
+      positions = plane.attributes.position as THREE.BufferAttribute
+      normals = plane.attributes.normal as THREE.BufferAttribute
+      colors = plane.attributes.color as THREE.BufferAttribute
 
-        const offsetRight = u * halfWidthWorld
-        const offsetUp = v * halfHeightWorld
+      let index = 0
+      for (let y = 0; y <= PAPER_SEGMENTS_Y; y++) {
+        const v = (y / PAPER_SEGMENTS_Y - 0.5) * 2
+        for (let x = 0; x <= PAPER_SEGMENTS_X; x++) {
+          const u = (x / PAPER_SEGMENTS_X - 0.5) * 2
+          const offsetRight = u * halfWidthWorld
+          const offsetUp = v * halfHeightWorld
+          const radius = PAPER_SPHERE_RADIUS + paperOffset
+          const angleRight = offsetRight / radius
+          const angleUp = offsetUp / radius
 
-        const angleRight = offsetRight / radius
-        const angleUp = offsetUp / radius
+          rotationX.setFromAxisAngle(tangentUp, angleRight)
+          rotationY.setFromAxisAngle(tangentRight, -angleUp)
+          rotationCombined.multiplyQuaternions(rotationX, rotationY)
 
-        rotationX.setFromAxisAngle(tangentUp, angleRight)
-        rotationY.setFromAxisAngle(tangentRight, -angleUp)
-        rotationCombined.multiplyQuaternions(rotationX, rotationY)
+          vertexDirection.copy(outwardNormal).applyQuaternion(rotationCombined)
+          vertexPosition.copy(vertexDirection).multiplyScalar(radius)
 
-        vertexDirection.copy(outwardNormal).applyQuaternion(rotationCombined)
-        vertexPosition.copy(vertexDirection).multiplyScalar(radius)
+          positions.setXYZ(index, vertexPosition.x, vertexPosition.y, vertexPosition.z)
+          normals.setXYZ(
+            index,
+            vertexDirection.x,
+            vertexDirection.y,
+            vertexDirection.z
+          )
 
-        positions.setXYZ(index, vertexPosition.x, vertexPosition.y, vertexPosition.z)
-        normals.setXYZ(
-          index,
-          vertexDirection.x,
-          vertexDirection.y,
-          vertexDirection.z
-        )
-
-        const edgeFactor = Math.max(Math.abs(u), Math.abs(v))
-        const shade = THREE.MathUtils.lerp(0.9, 1.0, 1 - Math.pow(edgeFactor, 1.5))
-        colors.setXYZ(index, shade, shade, shade)
-        index += 1
+          const edgeFactor = Math.max(Math.abs(u), Math.abs(v))
+          const shade = THREE.MathUtils.lerp(0.9, 1.0, 1 - Math.pow(edgeFactor, 1.5))
+          colors.setXYZ(index, shade, shade, shade)
+          index += 1
+        }
       }
+    } else {
+      const folded = buildPolyhedronPaperGeometry(
+        shape,
+        rayHit,
+        outwardNormal,
+        tangentRight,
+        tangentUp,
+        halfWidthWorld,
+        halfHeightWorld,
+        paperOffset
+      )
+      const topologyChanged =
+        plane.getAttribute('position')?.count !== folded.positions.length / 3 ||
+        Boolean(plane.getIndex()) !== Boolean(folded.indices)
+      if (topologyChanged) {
+        plane.dispose()
+        positions = new THREE.BufferAttribute(folded.positions, 3)
+        normals = new THREE.BufferAttribute(folded.normals, 3)
+        uvs = new THREE.BufferAttribute(folded.uvs, 2)
+        colors = new THREE.BufferAttribute(folded.colors, 3)
+        plane.setAttribute('position', positions)
+        plane.setAttribute('normal', normals)
+        plane.setAttribute('uv', uvs)
+        plane.setAttribute('color', colors)
+        indices = folded.indices
+          ? new THREE.BufferAttribute(folded.indices, 1)
+          : null
+        plane.setIndex(indices)
+      } else {
+        positions = plane.getAttribute('position') as THREE.BufferAttribute
+        normals = plane.getAttribute('normal') as THREE.BufferAttribute
+        uvs = plane.getAttribute('uv') as THREE.BufferAttribute
+        colors = plane.getAttribute('color') as THREE.BufferAttribute
+        positions.array.set(folded.positions)
+        normals.array.set(folded.normals)
+        uvs.array.set(folded.uvs)
+        colors.array.set(folded.colors)
+        indices = plane.getIndex()
+        if (indices && folded.indices) indices.array.set(folded.indices)
+      }
+      plane.computeBoundingSphere()
     }
 
     positions.needsUpdate = true
     normals.needsUpdate = true
     colors.needsUpdate = true
+    if (uvs) uvs.needsUpdate = true
+    if (indices) indices.needsUpdate = true
 
     basisMatrix.makeBasis(tangentRight, tangentUp, outwardNormal)
     quaternionBasis.setFromRotationMatrix(basisMatrix)
@@ -298,4 +377,3 @@ export function GhostPaper({
     </mesh>
   )
 }
-

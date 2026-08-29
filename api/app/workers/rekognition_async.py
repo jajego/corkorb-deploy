@@ -3,7 +3,6 @@
 import asyncio
 import io
 import logging
-import time
 from typing import Optional
 
 import boto3
@@ -73,16 +72,12 @@ async def check_image_safety_async(
     file_extension: File extension (e.g., 'jpg', 'png')
     max_retries: Maximum number of retries on transient errors
   """
-  rekognition_start = time.time()
   settings = get_settings()
   
   for attempt in range(max_retries):
     try:
       # Get S3 URI for Rekognition
-      s3_uri_start = time.time()
       s3_uri = s3_service.get_s3_uri_for_rekognition(orb_id, paper_id, file_extension)
-      s3_uri_time = time.time() - s3_uri_start
-      logger.info(f"[TIMING] Get S3 URI: {s3_uri_time*1000:.1f}ms")
       
       logger.info(f"Checking image safety for paper {paper_id} using Rekognition (attempt {attempt + 1})")
       
@@ -90,7 +85,6 @@ async def check_image_safety_async(
       rekognition_image = s3_uri
       if file_extension.lower() == 'webp':
         logger.info(f"Converting WebP to PNG for Rekognition (paper {paper_id})")
-        convert_start = time.time()
         
         # Download WebP from S3
         s3_client = s3_service.get_s3_client()
@@ -111,8 +105,6 @@ async def check_image_safety_async(
           return png_buffer.getvalue()
         
         png_bytes = await asyncio.to_thread(_convert_webp_to_png)
-        convert_time = time.time() - convert_start
-        logger.info(f"[TIMING] WebP to PNG conversion: {convert_time*1000:.1f}ms")
         
         # Use bytes API for Rekognition (WebP converted to PNG)
         rekognition_image = {'Bytes': png_bytes}
@@ -121,7 +113,6 @@ async def check_image_safety_async(
         rekognition_image = s3_uri
       
       # Call Rekognition API (run in thread pool since boto3 is sync)
-      rekognition_api_start = time.time()
       def _detect_moderation():
         rekognition = get_rekognition_client()
         return rekognition.detect_moderation_labels(
@@ -130,8 +121,6 @@ async def check_image_safety_async(
         )
       
       response = await asyncio.to_thread(_detect_moderation)
-      rekognition_api_time = time.time() - rekognition_api_start
-      logger.info(f"[TIMING] Rekognition API call: {rekognition_api_time*1000:.1f}ms")
       moderation_labels = response.get("ModerationLabels", [])
       
       # Check for unsafe labels
@@ -154,25 +143,13 @@ async def check_image_safety_async(
         )
         
         # Delete from S3 and database
-        delete_start = time.time()
         await delete_unsafe_paper(paper_id, orb_id, file_extension, unsafe_found)
-        delete_time = time.time() - delete_start
-        logger.info(f"[TIMING] Delete unsafe paper: {delete_time*1000:.1f}ms")
-        
-        total_time = time.time() - rekognition_start
-        logger.info(f"[TIMING] Rekognition total (unsafe): {total_time*1000:.1f}ms")
         return
       else:
         logger.info(f"Image {paper_id} passed safety check")
         
         # Mark as validated
-        validate_start = time.time()
         await mark_paper_validated(paper_id)
-        validate_time = time.time() - validate_start
-        logger.info(f"[TIMING] Mark paper validated: {validate_time*1000:.1f}ms")
-        
-        total_time = time.time() - rekognition_start
-        logger.info(f"[TIMING] Rekognition total (safe): {total_time*1000:.1f}ms")
         return
         
     except ClientError as e:

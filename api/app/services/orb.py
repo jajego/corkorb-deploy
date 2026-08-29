@@ -24,13 +24,14 @@ async def get_orb(session: AsyncSession, orb_id: str) -> Optional[OrbResponse]:
     updated_at=orb.updated_at,
     last_accessed=orb.last_accessed,
     max_papers=orb.max_papers,
+    shape=orb.shape,
     papers=None,  # Not fetched here - route handler fetches papers separately
   )
 
 
 async def create_orb(session: AsyncSession, data: OrbCreate) -> OrbResponse:
   """Create a new orb."""
-  orb = await orb_repo.create_orb(session, max_papers=data.max_papers)
+  orb = await orb_repo.create_orb(session, max_papers=data.max_papers, shape=data.shape)
   await session.commit()
   # Construct response manually (papers is not an attribute on Orb model, it's a relationship)
   # New orbs have no papers, so we can use an empty list
@@ -40,6 +41,7 @@ async def create_orb(session: AsyncSession, data: OrbCreate) -> OrbResponse:
     updated_at=orb.updated_at,
     last_accessed=orb.last_accessed,
     max_papers=orb.max_papers,
+    shape=orb.shape,
     papers=[],  # New orb has no papers
   )
 
@@ -93,6 +95,7 @@ async def update_orb(session: AsyncSession, orb_id: str, data: OrbUpdate) -> Opt
     updated_at=orb.updated_at,
     last_accessed=orb.last_accessed,
     max_papers=orb.max_papers,
+    shape=orb.shape,
     papers=None,  # Not included in update responses
   )
 

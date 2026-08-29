@@ -190,13 +190,17 @@ export function NailGunFollower({ active, pointer, isPinning = false }: NailGunF
       if (child instanceof THREE.Mesh) {
         child.castShadow = false
         child.receiveShadow = false
-        if (Array.isArray(child.material)) {
-          child.material.forEach((material) => {
-            material.side = THREE.DoubleSide
-          })
-        } else if (child.material) {
-          child.material.side = THREE.DoubleSide
-        }
+        child.renderOrder = 1000
+        const materials = Array.isArray(child.material)
+          ? child.material
+          : [child.material]
+        materials.forEach((material) => {
+          material.side = THREE.DoubleSide
+          material.transparent = true
+          material.depthTest = false
+          material.depthWrite = false
+          material.needsUpdate = true
+        })
       }
     })
 

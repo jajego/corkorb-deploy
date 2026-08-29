@@ -20,5 +20,6 @@ class Orb(Base):
   updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
   last_accessed: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
   max_papers: Mapped[int] = mapped_column(Integer, default=50)
+  shape: Mapped[str] = mapped_column(String(16), default="sphere", server_default="sphere")
 
   papers: Mapped[List["Paper"]] = relationship("Paper", back_populates="orb", cascade="all, delete-orphan")

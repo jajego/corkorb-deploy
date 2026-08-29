@@ -4,10 +4,13 @@
 
 import * as THREE from 'three'
 
+export type CorkShape = 'sphere' | 'cube' | 'pyramid'
+
 export interface PinInstance {
   id: string
   position: THREE.Vector3
   color: string
+  normal?: THREE.Vector3
 }
 
 export interface PendingPaper {

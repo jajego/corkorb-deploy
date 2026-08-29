@@ -26,7 +26,7 @@ async def create_orb(
     
     Returns the created orb with its passphrase ID.
     """
-    logger.info(f"[CREATE_ORB] Starting orb creation for user: {user_id}, max_papers: {data.max_papers}")
+    logger.info(f"[CREATE_ORB] Starting orb creation for user: {user_id}, shape: {data.shape}")
     
     try:
         logger.info(f"[CREATE_ORB] Calling orb_service.create_orb...")
@@ -48,6 +48,7 @@ async def create_orb(
 async def get_orb(
     orb_id: str,
     session: Annotated[AsyncSession, Depends(get_session)],
+    include_papers: bool = True,
     user_id: Annotated[Optional[str], Depends(get_optional_user_id)] = None,
 ):
     """
@@ -55,7 +56,7 @@ async def get_orb(
     
     Allows anonymous access for viewing orbs.
     Updates the last_accessed timestamp when the orb is accessed (only for authenticated users).
-    Includes all papers in the orb for faster initial load.
+    Includes papers by default; metadata-only callers can skip the paper payload.
     Returns 404 if the orb doesn't exist.
     """
     # Check if orb exists
@@ -70,8 +71,11 @@ async def get_orb(
         if not touched:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orb not found")
     
-    # Fetch papers for this orb to include in response
-    papers = await paper_service.get_papers_for_orb(session, orb_id)
+    papers = (
+        await paper_service.get_papers_for_orb(session, orb_id)
+        if include_papers
+        else None
+    )
     
     # Construct response manually (papers is not an attribute on Orb model, it's a relationship)
     return OrbResponse(
@@ -80,6 +84,7 @@ async def get_orb(
         updated_at=orb.updated_at,
         last_accessed=orb.last_accessed,
         max_papers=orb.max_papers,
+        shape=orb.shape,
         papers=papers,
     )
 

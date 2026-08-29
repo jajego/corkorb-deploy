@@ -1,14 +1,79 @@
 import logging
+import re
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
 from app.repositories import orb as orb_repo, paper as paper_repo
 from app.schemas.paper import PaperCreate, PaperData, PaperResponse, PaperUpdate, PinData
-from app.schemas.pin import PinCreate
 
 logger = logging.getLogger(__name__)
+
+IMAGE_EXTENSIONS = {"jpeg": "jpg", "jpg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
+
+
+def paper_to_response(paper: Paper) -> PaperResponse:
+  """Serialize both legacy nested and current flat pin formats."""
+  pin_position = paper.pin_position or {}
+  position = pin_position.get("position")
+  if not isinstance(position, dict):
+    position = {key: value for key, value in pin_position.items() if key not in {"color", "normal"}}
+
+  return PaperResponse(
+    id=paper.id,
+    orb_id=paper.orb_id,
+    user_id=paper.user_id,
+    username=paper.username,
+    source_url=paper.source_url,
+    created_at=paper.created_at,
+    uploaded=paper.uploaded,
+    validated=paper.validated,
+    data=PaperData(**paper.data) if paper.data else None,
+    pin=PinData(
+      position=position,
+      color=pin_position.get("color", "#ff4d4f"),
+      normal=pin_position.get("normal"),
+    ),
+  )
+
+
+def image_extension(source_url: str | None) -> str:
+  """Return the stored image extension, including legacy data URLs."""
+  if not source_url:
+    return "jpg"
+  if source_url.startswith("data:"):
+    match = re.search(r"data:image/(\w+);", source_url)
+    return IMAGE_EXTENSIONS.get(match.group(1).lower(), "jpg") if match else "jpg"
+  path = urlparse(source_url).path
+  return path.rsplit(".", 1)[-1].lower() if "." in path else "jpg"
+
+
+async def delete_uploaded_image(paper: Paper) -> None:
+  if not paper.uploaded:
+    return
+
+  from app.services import s3 as s3_service
+
+  try:
+    await s3_service.delete_image(paper.orb_id, paper.id, image_extension(paper.source_url))
+    logger.info("Deleted image from S3 for paper %s", paper.id)
+  except Exception as error:
+    logger.warning("Failed to delete image from S3 for paper %s: %s", paper.id, error)
+
+
+async def evict_oldest_paper(session: AsyncSession, orb_id: str, max_papers: int) -> None:
+  if await orb_repo.count_papers_for_orb(session, orb_id) < max_papers:
+    return
+
+  oldest = await paper_repo.get_oldest_paper_for_orb(session, orb_id)
+  if not oldest:
+    return
+
+  await delete_uploaded_image(oldest)
+  await paper_repo.delete_paper(session, oldest.id)
+  logger.info("Evicted oldest paper %s to make room for a new paper", oldest.id)
 
 
 async def get_paper(session: AsyncSession, paper_id: str) -> Optional[PaperResponse]:
@@ -17,58 +82,13 @@ async def get_paper(session: AsyncSession, paper_id: str) -> Optional[PaperRespo
   if not paper:
     return None
 
-  # Extract pin data from embedded pin_position
-  # Handle both formats: {'position': {'x': 0.0, 'y': 0.0, 'z': 0.0}, 'color': '...'} 
-  # and {'x': 0.0, 'y': 0.0, 'z': 0.0, 'color': '...'}
-  if "position" in paper.pin_position and isinstance(paper.pin_position["position"], dict):
-    # Nested format: {'position': {'x': 0.0, 'y': 0.0, 'z': 0.0}, 'color': '...'}
-    position = paper.pin_position["position"]
-    color = paper.pin_position.get("color", "#ff4d4f")
-  else:
-    # Flat format: {'x': 0.0, 'y': 0.0, 'z': 0.0, 'color': '...'}
-    position = {k: v for k, v in paper.pin_position.items() if k != "color"}
-    color = paper.pin_position.get("color", "#ff4d4f")
-  pin_data = PinData(position=position, color=color)
-  
-  paper_dict = {
-    "id": paper.id,
-    "orb_id": paper.orb_id,
-    "user_id": paper.user_id,
-    "username": paper.username,
-    "source_url": paper.source_url,
-    "created_at": paper.created_at,
-    "uploaded": paper.uploaded,
-    "validated": paper.validated,
-    "data": PaperData(**paper.data) if paper.data else None,
-    "pin": pin_data,
-  }
-  return PaperResponse(**paper_dict)
+  return paper_to_response(paper)
 
 
 async def get_papers_for_orb(session: AsyncSession, orb_id: str) -> List[PaperResponse]:
   """Get all papers for an orb."""
   papers = await paper_repo.get_papers_by_orb_id(session, orb_id)
-  result = []
-  for paper in papers:
-    # Extract pin data from embedded pin_position
-    position = {k: v for k, v in paper.pin_position.items() if k != "color"}
-    color = paper.pin_position.get("color", "#ff4d4f")
-    pin_data = PinData(position=position, color=color)
-    
-    paper_dict = {
-      "id": paper.id,
-      "orb_id": paper.orb_id,
-      "user_id": paper.user_id,
-      "username": paper.username,
-      "source_url": paper.source_url,
-      "created_at": paper.created_at,
-      "uploaded": paper.uploaded,
-      "validated": paper.validated,
-      "data": PaperData(**paper.data) if paper.data else None,
-      "pin": pin_data,
-    }
-    result.append(PaperResponse(**paper_dict))
-  return result
+  return [paper_to_response(paper) for paper in papers]
 
 
 async def create_paper(session: AsyncSession, orb_id: str, data: PaperCreate) -> PaperResponse:
@@ -92,87 +112,14 @@ async def create_paper(session: AsyncSession, orb_id: str, data: PaperCreate) ->
       if not orb:
         raise ValueError(f"Orb {orb_id} not found")
       
-      # Check paper count and evict oldest if needed
-      count = await orb_repo.count_papers_for_orb(session, orb_id)
-      if count >= orb.max_papers:
-        oldest = await paper_repo.get_oldest_paper_for_orb(session, orb_id)
-        if oldest:
-          # Delete from S3 if paper was uploaded
-          if oldest.uploaded:
-            import re
-            from urllib.parse import urlparse
-            from app.services import s3 as s3_service
-            
-            # Extract file extension from source_url
-            file_extension = "jpg"  # default
-            if oldest.source_url:
-              if oldest.source_url.startswith("data:"):
-                match = re.search(r"data:image/(\w+);", oldest.source_url)
-                if match:
-                  ext = match.group(1).lower()
-                  ext_map = {"jpeg": "jpg", "jpg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
-                  file_extension = ext_map.get(ext, "jpg")
-              else:
-                parsed = urlparse(oldest.source_url)
-                path = parsed.path
-                if "." in path:
-                  file_extension = path.split(".")[-1].lower()
-            
-            # Delete from S3
-            try:
-              await s3_service.delete_image(oldest.orb_id, oldest.id, file_extension)
-              logger.info(f"Evicted paper {oldest.id}: deleted image from S3")
-            except Exception as e:
-              logger.warning(f"Failed to delete evicted paper image from S3: {e}")
-              # Continue with database deletion even if S3 deletion fails
-          
-          # Delete from database
-          await paper_repo.delete_paper(session, oldest.id)
-          logger.info(f"Evicted oldest paper {oldest.id} to make room for new paper")
+      await evict_oldest_paper(session, orb_id, orb.max_papers)
   else:
     # Fallback to row-level locking (single-instance)
     orb = await orb_repo.get_orb_by_id(session, orb_id, lock=True)
     if not orb:
       raise ValueError(f"Orb {orb_id} not found")
     
-    # Check paper count and evict oldest if needed
-    # This is safe from race conditions due to the row lock
-    count = await orb_repo.count_papers_for_orb(session, orb_id)
-    if count >= orb.max_papers:
-      oldest = await paper_repo.get_oldest_paper_for_orb(session, orb_id)
-      if oldest:
-        # Delete from S3 if paper was uploaded
-        if oldest.uploaded:
-          import re
-          from urllib.parse import urlparse
-          from app.services import s3 as s3_service
-          
-          # Extract file extension from source_url
-          file_extension = "jpg"  # default
-          if oldest.source_url:
-            if oldest.source_url.startswith("data:"):
-              match = re.search(r"data:image/(\w+);", oldest.source_url)
-              if match:
-                ext = match.group(1).lower()
-                ext_map = {"jpeg": "jpg", "jpg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
-                file_extension = ext_map.get(ext, "jpg")
-            else:
-              parsed = urlparse(oldest.source_url)
-              path = parsed.path
-              if "." in path:
-                file_extension = path.split(".")[-1].lower()
-          
-          # Delete from S3
-          try:
-            await s3_service.delete_image(oldest.orb_id, oldest.id, file_extension)
-            logger.info(f"Evicted paper {oldest.id}: deleted image from S3")
-          except Exception as e:
-            logger.warning(f"Failed to delete evicted paper image from S3: {e}")
-            # Continue with database deletion even if S3 deletion fails
-        
-        # Delete from database
-        await paper_repo.delete_paper(session, oldest.id)
-        logger.info(f"Evicted oldest paper {oldest.id} to make room for new paper")
+    await evict_oldest_paper(session, orb_id, orb.max_papers)
 
   # Prepare data dict for storage
   data_dict: Optional[Dict] = None
@@ -182,7 +129,7 @@ async def create_paper(session: AsyncSession, orb_id: str, data: PaperCreate) ->
   # Prepare pin_position (required)
   if not data.pin:
     raise ValueError("Pin data is required to create a paper")
-  pin_position = {**data.pin.position, "color": data.pin.color}
+  pin_position = {**data.pin.position, "color": data.pin.color, "normal": data.pin.normal}
 
   # Create paper with embedded pin
   paper = await paper_repo.create_paper(
@@ -200,35 +147,7 @@ async def create_paper(session: AsyncSession, orb_id: str, data: PaperCreate) ->
   await session.commit()
   await session.refresh(paper)
 
-  # Extract pin data for response
-  position = {k: v for k, v in paper.pin_position.items() if k != "color"}
-  color = paper.pin_position.get("color", "#ff4d4f")
-  pin_data = PinData(position=position, color=color)
-  
-  # Convert data dict to PaperData if it exists and is a dict
-  paper_data_obj = None
-  if paper.data:
-    try:
-      if isinstance(paper.data, dict):
-        paper_data_obj = PaperData(**paper.data)
-      else:
-        paper_data_obj = paper.data
-    except Exception:
-      # If PaperData validation fails, just pass the dict as-is
-      paper_data_obj = paper.data if isinstance(paper.data, dict) else None
-  
-  paper_dict = {
-    "id": paper.id,
-    "orb_id": paper.orb_id,
-    "user_id": paper.user_id,
-    "source_url": paper.source_url,
-    "created_at": paper.created_at,
-    "uploaded": paper.uploaded,
-    "validated": paper.validated,
-    "data": paper_data_obj,
-    "pin": pin_data,
-  }
-  return PaperResponse(**paper_dict)
+  return paper_to_response(paper)
 
 
 async def delete_paper(session: AsyncSession, paper_id: str) -> bool:
@@ -242,39 +161,7 @@ async def delete_paper(session: AsyncSession, paper_id: str) -> bool:
   if not paper:
     return False
   
-  # Delete from S3 if paper was uploaded
-  if paper.uploaded:
-    # Extract file extension from source_url (CDN URL or blob data URL)
-    import re
-    from urllib.parse import urlparse
-    
-    # Try to extract extension from URL
-    file_extension = "jpg"  # default
-    if paper.source_url:
-      # Check if it's a CDN URL or blob data URL
-      if paper.source_url.startswith("data:"):
-        # Blob data URL: data:image/jpeg;base64,...
-        match = re.search(r"data:image/(\w+);", paper.source_url)
-        if match:
-          ext = match.group(1).lower()
-          # Map MIME types to extensions
-          ext_map = {"jpeg": "jpg", "jpg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
-          file_extension = ext_map.get(ext, "jpg")
-      else:
-        # CDN URL: https://cdn.example.com/orb_id/paper_id.jpg
-        parsed = urlparse(paper.source_url)
-        path = parsed.path
-        if "." in path:
-          file_extension = path.split(".")[-1].lower()
-    
-    # Delete from S3
-    from app.services import s3 as s3_service
-    try:
-      await s3_service.delete_image(paper.orb_id, paper_id, file_extension)
-      logger.info(f"Deleted image from S3 for paper {paper_id}")
-    except Exception as e:
-      logger.warning(f"Failed to delete image from S3 for paper {paper_id}: {e}")
-      # Continue with database deletion even if S3 deletion fails
+  await delete_uploaded_image(paper)
   
   # Delete from database
   deleted = await paper_repo.delete_paper(session, paper_id)
@@ -300,28 +187,10 @@ async def update_paper(session: AsyncSession, paper_id: str, data: PaperUpdate) 
 
   # Handle pin updates (replace existing pin if provided)
   if data.pin is not None:
-    paper.pin_position = {**data.pin.position, "color": data.pin.color}
+    paper.pin_position = {**data.pin.position, "color": data.pin.color, "normal": data.pin.normal}
 
   await session.flush()
   await session.refresh(paper)
 
-  # Extract pin data for response
-  position = {k: v for k, v in paper.pin_position.items() if k != "color"}
-  color = paper.pin_position.get("color", "#ff4d4f")
-  pin_data = PinData(position=position, color=color)
-  
-  paper_dict = {
-    "id": paper.id,
-    "orb_id": paper.orb_id,
-    "user_id": paper.user_id,
-    "username": paper.username,
-    "source_url": paper.source_url,
-    "created_at": paper.created_at,
-    "uploaded": paper.uploaded,
-    "validated": paper.validated,
-    "data": PaperData(**paper.data) if paper.data else None,
-    "pin": pin_data,
-  }
   await session.commit()
-  return PaperResponse(**paper_dict)
-
+  return paper_to_response(paper)

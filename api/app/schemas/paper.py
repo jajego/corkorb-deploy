@@ -10,6 +10,7 @@ class PinData(BaseModel):
   """Embedded pin data (no id needed since it's part of Paper)."""
   position: Dict[str, float] = Field(..., description="3D position as {x, y, z}")
   color: str = Field(..., description="Hex color string")
+  normal: Optional[Dict[str, float]] = Field(None, description="Outward surface normal as {x, y, z}")
 
 
 class PaperData(BaseModel):
@@ -55,4 +56,3 @@ class PaperUpdate(BaseModel):
   validated: Optional[bool] = None
   data: Optional[PaperData] = None
   pin: Optional[PinCreate] = None
-
