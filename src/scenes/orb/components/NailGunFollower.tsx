@@ -1,7 +1,9 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useGLTF } from '@react-three/drei'
+import { Hud, useGLTF } from '@react-three/drei'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
+
+import { OrbLights } from './OrbLights'
 
 const NAILGUN_MODEL_PATH = '/models/nailgun.glb'
 const POSITION_LERP = 0.2
@@ -190,15 +192,11 @@ export function NailGunFollower({ active, pointer, isPinning = false }: NailGunF
       if (child instanceof THREE.Mesh) {
         child.castShadow = false
         child.receiveShadow = false
-        child.renderOrder = 1000
         const materials = Array.isArray(child.material)
           ? child.material
           : [child.material]
         materials.forEach((material) => {
           material.side = THREE.DoubleSide
-          material.transparent = true
-          material.depthTest = false
-          material.depthWrite = false
           material.needsUpdate = true
         })
       }
@@ -326,11 +324,14 @@ export function NailGunFollower({ active, pointer, isPinning = false }: NailGunF
   })
 
   return (
-    <group ref={groupRef} visible={false}>
-      <group ref={modelRef}>
-        <primitive object={modelScene} />
+    <Hud>
+      <OrbLights />
+      <group ref={groupRef} visible={false}>
+        <group ref={modelRef}>
+          <primitive object={modelScene} />
+        </group>
       </group>
-    </group>
+    </Hud>
   )
 }
 

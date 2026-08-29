@@ -362,7 +362,9 @@ export function PinnedPaper({
       // Vector from pin position to camera position
       pinToCamera.copy(camera.position).sub(pinMesh.basePosition).normalize()
       // Surface normal at pin location (pointing outward from orb center)
-      if (pinMesh.normal) {
+      if (shape === 'sphere') {
+        tempSurfaceNormal.copy(pinMesh.basePosition).normalize()
+      } else if (pinMesh.normal) {
         tempSurfaceNormal.copy(pinMesh.normal).normalize()
       } else {
         tempSurfaceNormal.copy(pinMesh.basePosition).normalize()
