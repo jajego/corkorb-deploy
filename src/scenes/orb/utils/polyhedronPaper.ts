@@ -242,7 +242,7 @@ function buildTipGeometry(
       const position = direction.multiplyScalar(distance)
       positions.push(position.x, position.y, position.z)
       normals.push(surfaceNormal.x, surfaceNormal.y, surfaceNormal.z)
-      uvs.push(u, v)
+      uvs.push(u, 1 - v)
 
       const edgeFactor = Math.max(Math.abs(u * 2 - 1), Math.abs(v * 2 - 1))
       const shade = THREE.MathUtils.lerp(0.9, 1, 1 - Math.pow(edgeFactor, 1.5))
@@ -291,7 +291,7 @@ export function buildPolyhedronPaperGeometry(
       for (const vertex of [patch[0], patch[index], patch[index + 1]]) {
         positions.push(vertex.position.x, vertex.position.y, vertex.position.z)
         normals.push(faceNormal.x, faceNormal.y, faceNormal.z)
-        uvs.push(vertex.uv.x, vertex.uv.y)
+        uvs.push(vertex.uv.x, 1 - vertex.uv.y)
 
         const edgeFactor = Math.max(
           Math.abs(vertex.uv.x * 2 - 1),

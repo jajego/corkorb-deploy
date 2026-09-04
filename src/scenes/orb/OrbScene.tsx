@@ -25,6 +25,7 @@ import { useOrbWebSocket } from '../../hooks/useOrbWebSocket'
 import type { CorkShape, PendingPaper, PlacedPaper } from '../../types/orb'
 import { ToastContainer, useToast } from '../../components/ToastContainer'
 import { AboutModal } from '../../components/AboutModal'
+import { MyCorksModal } from '../../pages/MyCorksPage'
 import { DeletePaperModal } from '../../components/DeletePaperModal'
 import {
   vectorToLatLon,
@@ -93,6 +94,7 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
   const ghostGeometryRef = useRef<{ positions: Float32Array; normals: Float32Array } | null>(null)
   const pointerOverrideRef = useRef<{ x: number; y: number } | null>(null)
   const [showAboutModal, setShowAboutModal] = useState(false)
+  const [showMyCorksModal, setShowMyCorksModal] = useState(false)
   const [paperPendingDeletion, setPaperPendingDeletion] = useState<PlacedPaper | null>(null)
 
   // Optimistic paper tracking hooks
@@ -878,8 +880,10 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
         onNavigateToSignUp={() => navigate('/sign-up')}
         anonymousUsersCount={anonymousUsersCount}
         onShowAbout={() => setShowAboutModal(true)}
+        onShowMyCorks={() => setShowMyCorksModal(true)}
       />
       <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
+      <MyCorksModal isOpen={showMyCorksModal} onClose={() => setShowMyCorksModal(false)} />
       <DeletePaperModal
         isOpen={paperPendingDeletion !== null}
         imageUrl={paperPendingDeletion?.sourceUrl || null}

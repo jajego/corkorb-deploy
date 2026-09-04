@@ -2,11 +2,13 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .routes import health, orb, paper
 from .ws import orb as orb_ws
 from .ws.connection_manager import start_redis_subscriber, stop_redis_subscriber
+from .services.s3 import LOCAL_UPLOAD_DIR
 
 # Configure logging
 logging.basicConfig(
@@ -54,6 +56,10 @@ def create_app() -> FastAPI:
     allow_methods=["*"],
     allow_headers=["*"],
   )
+
+  if settings.local_file_storage:
+    LOCAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/local-images", StaticFiles(directory=LOCAL_UPLOAD_DIR), name="local-images")
 
   # Keep normal request paths quiet; failures retain method, path, and status.
   @app.middleware("http")

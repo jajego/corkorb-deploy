@@ -31,6 +31,7 @@ async def create_paper(
   uploaded: bool = False,
   validated: bool = False,
   username: Optional[str] = None,
+  paper_id: Optional[str] = None,
 ) -> Paper:
   """Create a new paper with embedded pin."""
   paper = Paper(
@@ -43,6 +44,8 @@ async def create_paper(
     uploaded=uploaded,
     validated=validated,
   )
+  if paper_id:
+    paper.id = paper_id
   session.add(paper)
   await session.flush()
   await session.refresh(paper)

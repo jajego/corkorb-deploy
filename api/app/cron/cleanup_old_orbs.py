@@ -20,14 +20,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session_factory
+from app.config import get_settings
 from app.models.orb import Orb
 from app.services import orb as orb_service
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Orbs older than this will be deleted
-RETENTION_DAYS = 14
+# Keep cleanup and API expiration labels on the same setting.
+RETENTION_DAYS = get_settings().orb_retention_days
 
 
 async def cleanup_old_orbs() -> int:
@@ -118,4 +119,3 @@ async def main():
 
 if __name__ == "__main__":
   asyncio.run(main())
-

@@ -27,6 +27,7 @@ interface OrbDebugHudProps {
   onNavigateToSignUp: () => void
   anonymousUsersCount: number
   onShowAbout: () => void
+  onShowMyCorks: () => void
 }
 
 export function OrbDebugHud({
@@ -48,6 +49,7 @@ export function OrbDebugHud({
   onNavigateToSignUp,
   anonymousUsersCount,
   onShowAbout,
+  onShowMyCorks,
 }: OrbDebugHudProps) {
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -152,6 +154,7 @@ export function OrbDebugHud({
           {isSignedIn ? (
             <>
               <span>Signed in as <strong>{username}</strong></span>
+              <button type="button" onClick={onShowMyCorks}>My corks</button>
               <button type="button" onClick={() => onSignOut()}>Sign out</button>
             </>
           ) : (

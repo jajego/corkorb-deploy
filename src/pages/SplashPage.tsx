@@ -6,6 +6,7 @@ import * as THREE from 'three'
 
 import { createLogger } from '../utils/logger'
 import { AboutModal } from '../components/AboutModal'
+import { MyCorksModal } from './MyCorksPage'
 import { CorkOrb } from '../scenes/orb/components/CorkOrb'
 import { OrbLights } from '../scenes/orb/components/OrbLights'
 import type { CorkShape } from '../types/orb'
@@ -71,6 +72,7 @@ export function SplashPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAboutModal, setShowAboutModal] = useState(false)
+  const [showMyCorksModal, setShowMyCorksModal] = useState(false)
   const [shape, setShape] = useState<CorkShape>('sphere')
 
   const handleCreateOrb = async () => {
@@ -157,7 +159,10 @@ export function SplashPage() {
           <span>{isCreating ? 'Making your cork…' : 'Create CorkOrb'}</span>
           {!isCreating && <span aria-hidden="true">↗</span>}
         </button>
-        <div className="about-text-container">
+        <div className="splash-links">
+          <button type="button" className="about-text" onClick={() => setShowMyCorksModal(true)}>
+            My corks
+          </button>
           <button type="button" className="about-text" onClick={() => setShowAboutModal(true)}>
             What is this?
           </button>
@@ -171,6 +176,7 @@ export function SplashPage() {
       </section>
 
       <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
+      <MyCorksModal isOpen={showMyCorksModal} onClose={() => setShowMyCorksModal(false)} />
     </main>
   )
 }

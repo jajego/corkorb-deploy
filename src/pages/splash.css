@@ -131,9 +131,10 @@
 
 .create-cork-button:disabled { cursor: wait; opacity: 0.62; }
 
-.about-text-container {
+.splash-links {
   display: flex;
   justify-content: center;
+  gap: 8px;
 }
 
 .about-text {

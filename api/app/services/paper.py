@@ -91,7 +91,15 @@ async def get_papers_for_orb(session: AsyncSession, orb_id: str) -> List[PaperRe
   return [paper_to_response(paper) for paper in papers]
 
 
-async def create_paper(session: AsyncSession, orb_id: str, data: PaperCreate) -> PaperResponse:
+async def create_paper(
+  session: AsyncSession,
+  orb_id: str,
+  data: PaperCreate,
+  *,
+  paper_id: Optional[str] = None,
+  uploaded: bool = False,
+  validated: bool = False,
+) -> PaperResponse:
   """
   Create a new paper for an orb, enforcing max_papers limit.
   
@@ -140,9 +148,11 @@ async def create_paper(session: AsyncSession, orb_id: str, data: PaperCreate) ->
     source_url=data.source_url,
     pin_position=pin_position,
     data=data_dict,
-    uploaded=False,
-    validated=False,
+    uploaded=uploaded,
+    validated=validated,
+    paper_id=paper_id,
   )
+  await orb_repo.record_orb_contribution(session, orb_id, data.user_id)
 
   await session.commit()
   await session.refresh(paper)

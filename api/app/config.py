@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     default="redis://localhost:6379/0",
     validation_alias=AliasChoices("APP_REDIS_URL", "REDIS_URL"),
   )
+  orb_retention_days: int = Field(default=14, ge=1)
+  local_file_storage: bool = False
 
   # Clerk authentication
   clerk_secret_key: str = Field(
@@ -86,4 +88,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
   return Settings()
-

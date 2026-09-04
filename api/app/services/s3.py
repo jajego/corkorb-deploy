@@ -1,6 +1,8 @@
 """S3 service for uploading, deleting, and managing images in AWS S3."""
 
 import asyncio
+import shutil
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin
 
@@ -14,6 +16,7 @@ logger = get_logger(__name__)
 
 # Cached S3 client (similar to Redis pattern)
 _s3_client: Optional[boto3.client] = None
+LOCAL_UPLOAD_DIR = Path(__file__).resolve().parents[2] / ".local_uploads"
 
 
 def get_s3_client() -> boto3.client:
@@ -117,8 +120,15 @@ async def upload_image(
     ValueError: If upload fails
   """
   settings = get_settings()
-  s3_client = get_s3_client()
   s3_key = get_s3_key(orb_id, paper_id, file_extension)
+
+  if settings.local_file_storage:
+    destination = LOCAL_UPLOAD_DIR / s3_key
+    await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
+    await asyncio.to_thread(destination.write_bytes, file_content)
+    return f"http://127.0.0.1:{settings.port}/local-images/{s3_key}"
+
+  s3_client = get_s3_client()
   
   # Auto-detect content type if not provided
   if not content_type:
@@ -179,8 +189,15 @@ async def delete_image(orb_id: str, paper_id: str, file_extension: str) -> bool:
     This is idempotent - safe to call multiple times.
   """
   settings = get_settings()
-  s3_client = get_s3_client()
   s3_key = get_s3_key(orb_id, paper_id, file_extension)
+
+  if settings.local_file_storage:
+    local_path = LOCAL_UPLOAD_DIR / s3_key
+    existed = local_path.exists()
+    await asyncio.to_thread(local_path.unlink, missing_ok=True)
+    return existed
+
+  s3_client = get_s3_client()
   
   def _delete():
     """Synchronous delete function to run in thread pool."""
@@ -222,9 +239,18 @@ async def delete_all_orb_images(orb_id: str) -> int:
     int: Number of images deleted
   """
   settings = get_settings()
-  s3_client = get_s3_client()
   prefix = f"{orb_id}/"
   deleted_count = 0
+
+  if settings.local_file_storage:
+    orb_directory = LOCAL_UPLOAD_DIR / orb_id
+    if not orb_directory.exists():
+      return 0
+    deleted_count = sum(1 for path in orb_directory.iterdir() if path.is_file())
+    await asyncio.to_thread(shutil.rmtree, orb_directory)
+    return deleted_count
+
+  s3_client = get_s3_client()
   
   def _list_and_delete():
     """Synchronous list and delete function to run in thread pool."""

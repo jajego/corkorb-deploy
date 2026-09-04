@@ -127,7 +127,7 @@ Check Railway logs to monitor the cron job execution.
 You can adjust the retention period by modifying `RETENTION_DAYS` in `cleanup_old_orbs.py`:
 
 ```python
-RETENTION_DAYS = 14  # Change this to your desired retention period
+APP_ORB_RETENTION_DAYS=14
 ```
 
 ## Troubleshooting

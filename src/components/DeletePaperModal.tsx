@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useMemo } from 'react'
 import { formatTimestamp } from '../utils/formatTimestamp'
+import './about-modal.css'
 
 type DeletePaperModalProps = {
   isOpen: boolean
@@ -38,151 +39,49 @@ export function DeletePaperModal({ isOpen, imageUrl, username, userId, createdAt
 
   // Use portal to render at body level, ensuring it's after drei's portals in DOM
   return createPortal(
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 10000,
-        padding: '20px',
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      }}
-      onClick={handleBackdropClick}
-    >
+    <div className="about-modal-backdrop" onClick={handleBackdropClick}>
       <div
-        style={{
-          backgroundColor: 'white',
-          padding: '40px',
-          borderRadius: '12px',
-          border: '3px solid black',
-          maxWidth: '500px',
-          width: '100%',
-          maxHeight: '80vh',
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          position: 'relative',
-          fontFamily: 'Courier New, Courier, monospace',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '24px',
-          boxSizing: 'border-box',
-        }}
+        className="about-modal delete-paper-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-paper-modal-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2
-          style={{
-            fontSize: '24px',
-            fontWeight: 'bold',
-            margin: 0,
-            color: '#333',
-            textAlign: 'center',
-          }}
-        >
+        <div className="delete-paper-modal__kicker">remove pin</div>
+        <h2 id="delete-paper-modal-title">
           Are you sure you want to unpin this image?
         </h2>
 
         {(username || userId || formattedTimestamp) && (
-          <div
-            style={{
-              fontSize: '14px',
-              color: '#666',
-              textAlign: 'center',
-              fontStyle: 'italic',
-            }}
-          >
+          <div className="delete-paper-modal__byline">
             Pinned by {username || userId || 'Unknown user'}
             {formattedTimestamp && ` at ${formattedTimestamp}`}
           </div>
         )}
 
         {imageUrl && (
-          <div
-            style={{
-              width: '100%',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              border: '1px solid #ddd',
-              backgroundColor: '#f5f5f5',
-              minHeight: '200px',
-            }}
-          >
+          <div className="delete-paper-modal__preview">
             <img
               src={imageUrl}
               alt="Paper to be deleted"
-              style={{
-                maxWidth: '100%',
-                maxHeight: '300px',
-                objectFit: 'contain',
-                display: 'block',
-              }}
             />
           </div>
         )}
 
-        <div
-          style={{
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'center',
-          }}
-        >
+        <div className="delete-paper-modal__actions">
           <button
             type="button"
             onClick={onCancel}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: '600',
-              color: '#333',
-              backgroundColor: 'white',
-              border: '2px solid #333',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontFamily: 'Courier New, Courier, monospace',
-              transition: 'background-color 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#f5f5f5'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'white'
-            }}
+            className="delete-paper-modal__button"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              fontWeight: '600',
-              color: 'white',
-              backgroundColor: '#d32f2f',
-              border: '2px solid #333',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontFamily: 'Courier New, Courier, monospace',
-              transition: 'background-color 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#b71c1c'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#d32f2f'
-            }}
+            className="delete-paper-modal__button delete-paper-modal__button--confirm"
           >
-            Confirm
+            Unpin
           </button>
         </div>
       </div>

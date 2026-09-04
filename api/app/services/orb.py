@@ -1,12 +1,13 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orb import Orb
+from app.config import get_settings
 from app.repositories import orb as orb_repo
-from app.schemas.orb import OrbCreate, OrbResponse, OrbUpdate
+from app.schemas.orb import OrbCreate, OrbResponse, OrbSummary, OrbUpdate, UserOrbsResponse
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,16 @@ async def get_orb(session: AsyncSession, orb_id: str) -> Optional[OrbResponse]:
   )
 
 
-async def create_orb(session: AsyncSession, data: OrbCreate) -> OrbResponse:
+async def create_orb(
+  session: AsyncSession, data: OrbCreate, owner_user_id: Optional[str] = None
+) -> OrbResponse:
   """Create a new orb."""
-  orb = await orb_repo.create_orb(session, max_papers=data.max_papers, shape=data.shape)
+  orb = await orb_repo.create_orb(
+    session,
+    max_papers=data.max_papers,
+    shape=data.shape,
+    owner_user_id=owner_user_id,
+  )
   await session.commit()
   # Construct response manually (papers is not an attribute on Orb model, it's a relationship)
   # New orbs have no papers, so we can use an empty list
@@ -107,6 +115,31 @@ async def touch_orb(session: AsyncSession, orb_id: str) -> bool:
     await session.commit()
     return True
   return False
+
+
+async def get_user_orbs(session: AsyncSession, user_id: str) -> UserOrbsResponse:
+  """List corks created by or contributed to by a user without extending their lifetime."""
+  retention = timedelta(days=get_settings().orb_retention_days)
+  created: list[OrbSummary] = []
+  contributed: list[OrbSummary] = []
+
+  for orb, paper_count, has_contributed in await orb_repo.get_user_orb_rows(session, user_id):
+    activity_at = orb.last_accessed or orb.created_at
+    if activity_at.tzinfo is None:
+      activity_at = activity_at.replace(tzinfo=timezone.utc)
+    summary = OrbSummary(
+      id=orb.id,
+      shape=orb.shape,
+      paper_count=paper_count,
+      max_papers=orb.max_papers,
+      expires_at=activity_at + retention,
+    )
+    if orb.owner_user_id == user_id:
+      created.append(summary)
+    elif has_contributed:
+      contributed.append(summary)
+
+  return UserOrbsResponse(created=created, contributed=contributed)
 
 
 

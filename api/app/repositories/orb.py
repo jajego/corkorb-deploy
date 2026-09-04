@@ -1,10 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.orb import Orb
+from app.models.orb import Orb, OrbContributor
+from app.models.paper import Paper
 from app.utils.passphrase import generate_unique_passphrase
 
 
@@ -29,6 +31,7 @@ async def create_orb(
   max_papers: int = 50,
   shape: str = "sphere",
   orb_id: Optional[str] = None,
+  owner_user_id: Optional[str] = None,
 ) -> Orb:
   """
   Create a new orb with a unique passphrase ID.
@@ -47,7 +50,7 @@ async def create_orb(
     existing = await get_orb_by_id(session, orb_id)
     if existing:
       raise ValueError(f"Orb ID '{orb_id}' already exists")
-    orb = Orb(id=orb_id, max_papers=max_papers, shape=shape)
+    orb = Orb(id=orb_id, max_papers=max_papers, shape=shape, owner_user_id=owner_user_id)
   else:
     # Generate a unique passphrase
     # First, get all existing orb IDs to check against
@@ -57,7 +60,7 @@ async def create_orb(
     
     # Generate unique passphrase
     passphrase = generate_unique_passphrase(existing_ids)
-    orb = Orb(id=passphrase, max_papers=max_papers, shape=shape)
+    orb = Orb(id=passphrase, max_papers=max_papers, shape=shape, owner_user_id=owner_user_id)
   
   session.add(orb)
   await session.flush()
@@ -92,6 +95,51 @@ async def count_papers_for_orb(session: AsyncSession, orb_id: str) -> int:
   result = await session.execute(select(Paper).where(Paper.orb_id == orb_id))
   papers = result.scalars().all()
   return len(papers)
+
+
+async def record_orb_contribution(session: AsyncSession, orb_id: str, user_id: str) -> None:
+  """Record a user's first contribution without duplicating subsequent uploads."""
+  if user_id.startswith("user:anonymous"):
+    return
+
+  values = {"user_id": user_id, "orb_id": orb_id, "contributed_at": datetime.now(timezone.utc)}
+  bind = session.get_bind()
+  if bind.dialect.name == "postgresql":
+    await session.execute(
+      postgres_insert(OrbContributor)
+      .values(**values)
+      .on_conflict_do_nothing(index_elements=["user_id", "orb_id"])
+    )
+    return
+
+  # SQLite is only used by the test suite.
+  if not await session.get(OrbContributor, (user_id, orb_id)):
+    session.add(OrbContributor(**values))
+
+
+async def get_user_orb_rows(session: AsyncSession, user_id: str) -> list[tuple[Orb, int, bool]]:
+  """Return a user's owned/contributed corks and paper counts in one query."""
+  paper_count = (
+    select(func.count(Paper.id))
+    .where(Paper.orb_id == Orb.id)
+    .correlate(Orb)
+    .scalar_subquery()
+  )
+  contribution = and_(
+    OrbContributor.orb_id == Orb.id,
+    OrbContributor.user_id == user_id,
+  )
+  result = await session.execute(
+    select(
+      Orb,
+      paper_count,
+      OrbContributor.user_id.is_not(None),
+    )
+    .outerjoin(OrbContributor, contribution)
+    .where(or_(Orb.owner_user_id == user_id, OrbContributor.user_id.is_not(None)))
+    .order_by(func.coalesce(Orb.last_accessed, Orb.created_at).desc())
+  )
+  return [(orb, int(paper_count), bool(contributed)) for orb, paper_count, contributed in result.all()]
 
 
 

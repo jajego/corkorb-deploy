@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.schemas.paper import PaperData, PaperResponse
+from app.schemas.paper import PaperCreate, PaperData, PaperResponse
 from app.schemas.pin import PinCreate
 from app.schemas.ws import PaperCreatedMessage
 from app.services import paper as paper_service, s3 as s3_service
@@ -175,28 +175,19 @@ async def create_paper_with_image(
     # 8. Create Paper record with CDN URL directly.
     # Note: Frontend uploader will use their local file for instant feedback
     # Other users will receive CDN URL via WebSocket (already uploaded to S3)
-    # Create paper with pre-generated ID
-    from app.models.paper import Paper
-    # Store the pin position, color, and optional polygon surface normal together.
-    # (consistent with create_paper service)
-    pin_position_flat = {**pin_data.position, "color": pin_data.color, "normal": pin_data.normal}
-    paper_model = Paper(
-      id=paper_id,  # Use pre-generated ID
-      orb_id=orb_id,
-      user_id=user_id,
-      username=paper_username,
-      source_url=cdn_url,
-      pin_position=pin_position_flat,
-      data=paper_data.model_dump() if paper_data else {},
-      uploaded=True,  # Already uploaded to S3
-      validated=False,  # Will be validated by Rekognition
+    paper = await paper_service.create_paper(
+      session,
+      orb_id,
+      PaperCreate(
+        user_id=user_id,
+        username=paper_username,
+        source_url=cdn_url,
+        pin=pin_data,
+        data=paper_data,
+      ),
+      paper_id=paper_id,
+      uploaded=True,
     )
-    session.add(paper_model)
-    await session.flush()
-    await session.refresh(paper_model)
-    await session.commit()
-    
-    paper = paper_service.paper_to_response(paper_model)
     
     logger.info(f"Created paper {paper.id} for orb {orb_id} with CDN URL (username: {paper_username})")
     

@@ -33,7 +33,7 @@ async def handle_create_orb(
 ) -> tuple[OrbCreatedMessage, Dict[str, Any]]:
   """Handle create_orb message."""
   try:
-    orb = await orb_service.create_orb(session, message.data)
+    orb = await orb_service.create_orb(session, message.data, owner_user_id=user_id)
     await session.commit()
     
     response = OrbCreatedMessage(orb=orb.model_dump(mode='json'))
@@ -178,4 +178,3 @@ async def handle_get_state(
     raise ValueError(f"Authorization failed: {str(e)}")
   except Exception as e:
     raise ValueError(f"Failed to get state: {str(e)}")
-

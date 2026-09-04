@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.schemas.orb import OrbCreate, OrbResponse
+from app.schemas.orb import OrbCreate, OrbResponse, UserOrbsResponse
 from app.services import orb as orb_service, paper as paper_service
 from app.utils.auth import get_current_user_id, get_optional_user_id
 
@@ -30,7 +30,7 @@ async def create_orb(
     
     try:
         logger.info(f"[CREATE_ORB] Calling orb_service.create_orb...")
-        orb = await orb_service.create_orb(session, data)
+        orb = await orb_service.create_orb(session, data, owner_user_id=user_id)
         logger.info(f"[CREATE_ORB] Successfully created orb: {orb.id}")
         return orb
     except ValueError as e:
@@ -42,6 +42,15 @@ async def create_orb(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create orb: {str(e)}",
         )
+
+
+@router.get("/me/orbs", response_model=UserOrbsResponse)
+async def get_my_orbs(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user_id: Annotated[str, Depends(get_current_user_id)],
+):
+    """List corks created by or contributed to by the current user."""
+    return await orb_service.get_user_orbs(session, user_id)
 
 
 @router.get("/orbs/{orb_id}", response_model=OrbResponse)

@@ -6,7 +6,7 @@ CorkOrb is a shared 3D corkboard: people pin images to a sphere, cube, or square
 
 - `src/` — React 19, TypeScript, Clerk authentication, Three.js scene and WebSocket client.
 - `api/app/` — FastAPI routes, SQLAlchemy services/repositories, WebSocket gateway, S3 integration, and async moderation worker.
-- PostgreSQL — persisted orbs, papers, placement geometry, and pins.
+- PostgreSQL — persisted orbs, papers, placement geometry, ownership, and contribution history.
 - Redis — distributed paper-creation lock and cross-instance WebSocket broadcasts.
 - S3 + CloudFront — private image objects and CDN delivery.
 
@@ -14,7 +14,7 @@ Paper geometry (`positions` and `normals`) remains persisted and sent for compat
 
 ## Local setup
 
-Prerequisites: Node.js 20+, Python 3.11–3.13, PostgreSQL, and Redis. Clerk and AWS are required for authenticated uploads.
+Prerequisites: Node.js 20+, Python 3.11–3.13, PostgreSQL, and Redis. Clerk is required for authenticated uploads. With `APP_LOCAL_FILE_STORAGE=true`, local images are stored under `api/.local_uploads`; deployed environments use AWS by default.
 
 ```powershell
 # frontend
@@ -30,7 +30,7 @@ python -m venv .venv
 pip install -r requirements.txt
 Copy-Item env.example .env
 alembic upgrade head
-uvicorn app.main:app --reload
+python run_local.py
 ```
 
 The frontend runs on `http://localhost:5173`; the API defaults to `http://localhost:8000`.
@@ -51,6 +51,8 @@ Use the `APP_*` names below for new deployments. The backend deliberately accept
 | S3 bucket | `APP_AWS_S3_BUCKET_NAME` | `AWS_S3_BUCKET_NAME` |
 | CloudFront base URL | `APP_CDN_BASE_URL` | `CDN_BASE_URL` |
 | Rekognition threshold | `APP_REKOGNITION_MIN_CONFIDENCE` | `REKOGNITION_MIN_CONFIDENCE` |
+| Inactive-orb retention (days) | `APP_ORB_RETENTION_DAYS` | — |
+| Local filesystem uploads | `APP_LOCAL_FILE_STORAGE` | — |
 
 Also set `APP_ENV`, `APP_DEBUG`, and `APP_ALLOWED_ORIGINS_RAW` (a comma-separated list). The frontend requires `VITE_CLERK_PUBLISHABLE_KEY`; `VITE_API_BASE_URL` is optional locally and required when the API is not localhost.
 

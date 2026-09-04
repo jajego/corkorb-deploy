@@ -1,8 +1,9 @@
 import { SignIn, SignUp, useAuth } from '@clerk/react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 import { createLogger } from '../utils/logger'
+import './auth.css'
 
 const logger = createLogger('AuthPage')
 
@@ -11,12 +12,6 @@ export function AuthPage() {
   const navigate = useNavigate()
   const { isSignedIn, isLoaded } = useAuth()
   const isSignUp = location.pathname === '/sign-up'
-  const [showSignUp, setShowSignUp] = useState(isSignUp)
-
-  // Sync state with URL path
-  useEffect(() => {
-    setShowSignUp(location.pathname === '/sign-up')
-  }, [location.pathname])
 
   // Handle authentication state change - redirect when signed in
   useEffect(() => {
@@ -35,99 +30,47 @@ export function AuthPage() {
   // If already signed in, show redirect message
   if (isLoaded && isSignedIn) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        fontSize: '18px',
-        color: '#666'
-      }}>
-        Redirecting...
-      </div>
+      <main className="auth-page auth-status">Redirecting…</main>
     )
   }
 
   // Show loading while auth state is being determined
   if (!isLoaded) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        fontSize: '18px',
-        color: '#666',
-        backgroundColor: "white"
-      }}>
-        Loading...
-      </div>
+      <main className="auth-page auth-status">Loading…</main>
     )
   }
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      padding: '20px',
-      backgroundColor: '#f5f5f5',
-      fontFamily: 'system-ui, -apple-system, sans-serif'
-    }}>
-      <div style={{
-        maxWidth: '500px',
-        width: '100%',
-        textAlign: 'center',
-        backgroundColor: 'white',
-        padding: '40px',
-        borderRadius: '12px',
-        boxShadow: "rgba(255, 255, 255, 0.2) 0px 0px 0px 1px inset, rgba(0, 0, 0, 0.9) 0px 0px 0px 1px"
-      }}>
+    <main className="auth-page">
+      <section className="auth-panel">
+        <div className="auth-kicker">shared image space</div>
+        <h1 className="auth-title">CorkOrb</h1>
+        <img className="auth-preview" src="/PINNED_PICTURE.PNG" alt="A CorkOrb covered with pinned pictures" />
 
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-        </div>
-
-        <div style={{ marginTop: '0px' }}>
-          {showSignUp ? (
+        <div className="auth-form">
+          {isSignUp ? (
             <>
-            <div style={{ fontSize: "54px", fontFamily: "Courier", fontWeight: 600, fontStyle: "italic" }}>CorkOrb</div>
-            <div style={{ margin: "12px 0px 0px 0px" }}><img height="75%" width="75%" src="/PINNED_PICTURE.PNG" /></div>
-            <SignUp
-              routing="virtual"
-              signInUrl="/sign-in"
-              fallbackRedirectUrl="/"
-              appearance={{
-                elements: {
-                  rootBox: {
-                    margin: '0 auto',
-                  },
-                },
-              }}
-            />
+              <SignUp
+                routing="virtual"
+                signInUrl="/sign-in"
+                fallbackRedirectUrl="/"
+                appearance={{ elements: { rootBox: { margin: '0 auto' } } }}
+              />
             </>
           ) : (
             <>
-            <div style={{ fontSize: "54px", fontFamily: "Courier", fontWeight: 600, fontStyle: "italic" }}>CorkOrb</div>
-            <div style={{ margin: "12px 0px 0px 0px" }}><img height="75%" width="75%" src="/PINNED_PICTURE.PNG" /></div>
-            <SignIn
-              routing="virtual"
-              signUpUrl="/sign-up"
-              fallbackRedirectUrl="/"
-              appearance={{
-                elements: {
-                  rootBox: {
-                    margin: '0 auto',
-                  },
-                },
-              }}
-            />
+              <SignIn
+                routing="virtual"
+                signUpUrl="/sign-up"
+                fallbackRedirectUrl="/"
+                appearance={{ elements: { rootBox: { margin: '0 auto' } } }}
+              />
             </>
           )}
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   )
 }
 

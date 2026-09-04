@@ -10,32 +10,6 @@ body,
   font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-.cl-headerTitle,
-.cl-headerSubtitle {
-  display: none !important;
-}
-
-.cl-cardBox {
-  box-shadow: none !important;
-}
-
-.cl-card {
-  border: none !important;
-  box-shadow: none !important;
-  padding-top: 0px !important;
-}
-
-.cl-button__google {
-  border:1px dashed black;
-  border-width:1px !important;
-  box-shadow: none !important;
-  color: black !important;
-}
-
-.cl-footer > div:nth-child(2) {
-  display: none !important;
-}
-
 .orb-dropzone {
   width: 100%;
   height: 100%;
@@ -347,22 +321,22 @@ body,
 }
 
 .pin-tooltip {
+  position: relative;
+  z-index: 100;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
-  border-radius: 4px;
+  gap: 2px;
   margin-left: 12px;
-  font-family: 'Courier New', Courier, monospace !important;
-  background-color: white;
-  color: black;
+  padding: 7px 9px 6px;
+  color: #211d18;
+  background: rgba(255, 249, 225, 0.95);
+  border: 1px solid rgba(33, 29, 24, 0.78);
+  border-radius: 2px;
+  box-shadow: 1px 1px 0 rgba(33, 29, 24, 0.16) !important;
+  font-family: 'Times New Roman', Times, serif !important;
   font-size: 12px;
-  box-shadow: none !important;
-  border: 1px solid black;
   pointer-events: none;
   white-space: nowrap;
-  z-index: 100;
-  position: relative;
 }
 
 /* Hide tooltips when about modal is open (prevents stacking context issues) */
@@ -372,10 +346,81 @@ body.delete-paper-modal-open .pin-tooltip {
 }
 
 .pin-tooltip__user {
-  font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .pin-tooltip__timestamp {
-  opacity: 0.8;
+  color: #5c5348;
+  font: 10px/1.25 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.delete-paper-modal {
+  width: min(100%, 500px);
+}
+
+.delete-paper-modal__kicker {
+  margin-bottom: 8px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.delete-paper-modal h2 {
+  margin-bottom: 18px;
+}
+
+.delete-paper-modal__byline {
+  margin: -6px 0 18px;
+  color: #5c5348;
+  font-size: 14px;
+  font-style: italic;
+  text-align: center;
+}
+
+.delete-paper-modal__preview {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(33, 29, 24, 0.58);
+}
+
+.delete-paper-modal__preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+}
+
+.delete-paper-modal__actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.delete-paper-modal__button {
+  min-width: 100px;
+  padding: 8px 16px;
+  color: #211d18;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(33, 29, 24, 0.78);
+  border-radius: 2px;
+  font: 16px/1.2 'Times New Roman', Times, serif;
+  cursor: pointer;
+}
+
+.delete-paper-modal__button:hover {
+  background: #fff9cd;
+  border-color: #211d18;
+}
+
+.delete-paper-modal__button--confirm {
+  background: #f0d8ad;
+}
+
+.delete-paper-modal__button:focus-visible {
+  outline: 2px solid #1b4e81;
+  outline-offset: 2px;
 }

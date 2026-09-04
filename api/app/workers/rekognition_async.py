@@ -73,6 +73,10 @@ async def check_image_safety_async(
     max_retries: Maximum number of retries on transient errors
   """
   settings = get_settings()
+
+  if settings.local_file_storage:
+    await mark_paper_validated(paper_id)
+    return
   
   for attempt in range(max_retries):
     try:

@@ -30,4 +30,17 @@ class OrbUpdate(BaseModel):
   last_accessed: Optional[datetime] = None
 
 
+class OrbSummary(BaseModel):
+  id: str
+  shape: Literal["sphere", "cube", "pyramid"]
+  paper_count: int
+  max_papers: int
+  expires_at: datetime
+
+
+class UserOrbsResponse(BaseModel):
+  created: List[OrbSummary]
+  contributed: List[OrbSummary]
+
+
 

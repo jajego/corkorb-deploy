@@ -1,0 +1,147 @@
+.auth-page {
+  box-sizing: border-box;
+  height: 100dvh;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  color: #211d18;
+  font-family: 'Times New Roman', Times, serif;
+  background-color: #ded9cf;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.42)),
+    url('/textures/office.webp');
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+.auth-status {
+  font-size: 17px;
+}
+
+.auth-panel {
+  box-sizing: border-box;
+  width: min(100%, 460px);
+  padding: 18px 22px 22px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(33, 29, 24, 0.62);
+  box-shadow: 1px 1px 0 rgba(33, 29, 24, 0.18);
+  backdrop-filter: blur(9px);
+}
+
+.auth-kicker {
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.auth-title {
+  margin: 0;
+  font: 700 32px/1.1 'Times New Roman', Times, serif;
+}
+
+.auth-preview {
+  display: block;
+  width: min(72%, 290px);
+  height: auto;
+  margin: 8px auto 2px;
+}
+
+.auth-form {
+  color: #211d18;
+}
+
+.auth-form .cl-rootBox,
+.auth-form .cl-cardBox {
+  width: 100%;
+  box-shadow: none !important;
+}
+
+.auth-form .cl-card {
+  width: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: #211d18;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-family: 'Times New Roman', Times, serif !important;
+}
+
+.auth-form .cl-headerTitle,
+.auth-form .cl-headerSubtitle {
+  display: none !important;
+}
+
+.auth-form .cl-main {
+  gap: 14px;
+}
+
+.auth-form .cl-socialButtonsBlockButton,
+.auth-form .cl-formButtonPrimary {
+  min-height: 36px;
+  color: #211d18 !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  border: 1px solid rgba(33, 29, 24, 0.72) !important;
+  border-radius: 2px !important;
+  box-shadow: 1px 1px 0 rgba(33, 29, 24, 0.18) !important;
+  font: 15px/1.2 'Times New Roman', Times, serif !important;
+  text-transform: none !important;
+}
+
+.auth-form .cl-socialButtonsBlockButton:hover,
+.auth-form .cl-formButtonPrimary:hover {
+  background: #fff9cd !important;
+}
+
+.auth-form .cl-formFieldLabel,
+.auth-form .cl-formFieldInput,
+.auth-form .cl-dividerText,
+.auth-form .cl-footerActionText,
+.auth-form .cl-footerActionLink {
+  font-family: 'Times New Roman', Times, serif !important;
+}
+
+.auth-form .cl-formFieldLabel {
+  color: #211d18 !important;
+  font-size: 14px !important;
+}
+
+.auth-form .cl-formFieldInput {
+  color: #211d18 !important;
+  background: rgba(255, 255, 255, 0.78) !important;
+  border: 1px solid rgba(33, 29, 24, 0.56) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+}
+
+.auth-form .cl-formFieldInput:focus {
+  border-color: #1b4e81 !important;
+  box-shadow: 0 0 0 1px #1b4e81 !important;
+}
+
+.auth-form .cl-dividerLine {
+  background: rgba(33, 29, 24, 0.28) !important;
+}
+
+.auth-form .cl-dividerText,
+.auth-form .cl-footerActionText {
+  color: #5c5348 !important;
+}
+
+.auth-form .cl-footerActionLink {
+  color: #0645ad !important;
+  text-decoration: underline;
+}
+
+.auth-form .cl-footer > div:nth-child(2) {
+  display: none !important;
+}
+
+@media (max-width: 520px) {
+  .auth-page { padding: 12px; }
+  .auth-panel { padding: 14px 14px 18px; }
+  .auth-preview { width: min(64%, 240px); }
+}

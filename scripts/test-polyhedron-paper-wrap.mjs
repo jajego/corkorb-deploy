@@ -68,6 +68,25 @@ function verifyContinuousTip(geometry) {
   assert.equal(uniqueUvs.size, geometry.uvs.length / 2)
 }
 
+function verifyImageOrientation(geometry) {
+  assert.deepEqual(
+    Array.from(geometry.uvs.slice(0, 6)),
+    [0, 1, 1, 1, 1, 0]
+  )
+}
+
+const flatCube = buildPolyhedronPaperGeometry(
+  'cube',
+  new THREE.Vector3(0, 0, 1),
+  new THREE.Vector3(0, 0, 1),
+  new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(0, 1, 0),
+  0.4,
+  0.4,
+  0.024
+)
+verifyImageOrientation(flatCube)
+
 const cube = buildPolyhedronPaperGeometry(
   'cube',
   new THREE.Vector3(0.8, 0, 1),
@@ -121,4 +140,4 @@ const pyramidTip = buildPolyhedronPaperGeometry(
 )
 verifyContinuousTip(pyramidTip)
 
-console.log('polyhedron edges stay exact and tips use one continuous surface')
+console.log('polyhedron images stay upright, edges stay exact, and tips use one continuous surface')

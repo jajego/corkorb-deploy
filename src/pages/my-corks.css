@@ -1,0 +1,249 @@
+.about-modal.my-corks-modal {
+  width: min(100%, 650px);
+  max-height: min(86dvh, 760px);
+}
+
+.my-corks-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(33, 29, 24, 0.35);
+}
+
+.my-corks-kicker {
+  margin-bottom: 7px;
+  font-size: 13px;
+}
+
+.my-corks-header h2 {
+  margin: 0;
+  font: 700 34px/1.05 'Times New Roman', Times, serif;
+  text-align: left;
+}
+
+.my-corks-sections {
+  display: grid;
+  gap: 28px;
+  margin-top: 26px;
+}
+
+.my-corks-tabs {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 24px;
+}
+
+.my-corks-tabs button {
+  position: relative;
+  padding: 0 0 4px;
+  color: #211d18;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  font: 700 17px/1.2 'Times New Roman', Times, serif;
+  opacity: 0.48;
+  cursor: pointer;
+}
+
+.my-corks-tabs button.is-active {
+  border-bottom-color: #211d18;
+  opacity: 1;
+}
+
+.my-corks-tabs button:focus-visible {
+  position: relative;
+  outline: 2px solid #0645ad;
+  outline-offset: 2px;
+}
+
+.my-corks-tabs button span {
+  margin-left: 2px;
+  font: 10px/1 ui-monospace, monospace;
+  vertical-align: super;
+}
+
+.cork-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 140px));
+  align-items: start;
+  justify-content: center;
+  gap: 24px 18px;
+}
+
+.cork-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: 84px auto auto;
+  align-items: center;
+  justify-items: center;
+  width: 140px;
+  padding: 0;
+  color: #211d18;
+  background: transparent;
+  border: 0;
+  text-align: center;
+  text-decoration: none;
+  transition: transform 120ms ease;
+}
+
+.cork-card:hover,
+.cork-card:focus-visible {
+  color: #211d18;
+  transform: translateY(-2px);
+}
+
+.cork-card:focus-visible {
+  outline: 2px solid #0645ad;
+  outline-offset: 5px;
+}
+
+.cork-card__shape {
+  position: relative;
+  display: block;
+  align-self: center;
+  width: 78px;
+  height: 78px;
+  box-sizing: border-box;
+  background-color: #f0d8ad;
+  background-image:
+    radial-gradient(circle, rgba(33, 29, 24, 0.62) 0 0.7px, transparent 0.9px),
+    radial-gradient(circle, rgba(33, 29, 24, 0.4) 0 0.9px, transparent 1.1px),
+    radial-gradient(circle, rgba(33, 29, 24, 0.28) 0 0.55px, transparent 0.75px);
+  background-position: 1px 2px, 7px 5px, 3px 9px;
+  background-size: 11px 13px, 17px 19px, 23px 21px;
+  transition: background 120ms ease;
+}
+
+.cork-card__shape::after {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 2px solid #211d18;
+  content: '';
+  pointer-events: none;
+}
+
+.cork-card:hover .cork-card__shape {
+  background-color: #ffeaa9;
+}
+
+.cork-card__shape--sphere,
+.cork-card__shape--sphere::after { border-radius: 50%; }
+
+.cork-card__shape--cube,
+.cork-card__shape--cube::after { border-radius: 0; }
+
+.cork-card__shape--pyramid {
+  position: relative;
+  width: 84px;
+  height: auto;
+  aspect-ratio: 2 / 1.7320508076;
+  border: 0;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.cork-card__shape--pyramid::after { content: none; }
+
+.cork-card__outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: #211d18;
+  stroke-width: 2;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  shape-rendering: geometricPrecision;
+  pointer-events: none;
+}
+
+.cork-card__outline > * {
+  vector-effect: non-scaling-stroke;
+}
+
+.cork-card__expiry {
+  padding: 1px 5px;
+  background: rgba(255, 243, 176, 0.82);
+  border: 1px solid rgba(33, 29, 24, 0.4);
+  border-radius: 999px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.cork-card strong {
+  width: 100%;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+  font: italic 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.cork-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: #5c5348;
+  font-size: 11px;
+}
+
+.cork-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 26px;
+  font: 12px/1.2 ui-monospace, monospace;
+}
+
+.cork-pagination button {
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  color: #211d18;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cork-pagination button:hover:not(:disabled) {
+  background: #f0d8ad;
+}
+
+.cork-pagination button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cork-list-empty,
+.my-corks-message {
+  margin: 0;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px dashed rgba(33, 29, 24, 0.4);
+  color: #5c5348;
+  font-size: 15px;
+  text-align: center;
+}
+
+.my-corks-message { margin-top: 26px; }
+
+@media (max-width: 600px) {
+  .about-modal.my-corks-modal { padding: 20px 18px 22px; }
+  .my-corks-header { align-items: start; }
+  .my-corks-header h2 { font-size: 29px; }
+  .cork-list { grid-template-columns: repeat(2, minmax(0, 140px)); }
+}
+
+@media (max-width: 390px) {
+  .my-corks-tabs { gap: 14px; }
+  .my-corks-tabs button { font-size: 15px; }
+  .cork-list { grid-template-columns: minmax(0, 140px); }
+}

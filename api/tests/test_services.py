@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timezone
 
-from app.models.orb import Orb
+from app.models.orb import Orb, OrbContributor
 from app.models.paper import Paper
 from app.schemas.orb import OrbCreate, OrbUpdate
 from app.schemas.paper import PaperCreate, PaperData
@@ -13,7 +13,7 @@ from app.services import orb as orb_service, paper as paper_service
 async def test_create_and_get_orb(db_session):
   """Test creating and retrieving an orb."""
   create_data = OrbCreate(max_papers=30, shape="cube")
-  created = await orb_service.create_orb(db_session, create_data)
+  created = await orb_service.create_orb(db_session, create_data, owner_user_id="owner-1")
   assert created.id is not None
   assert created.max_papers == 30
   assert created.shape == "cube"
@@ -23,6 +23,15 @@ async def test_create_and_get_orb(db_session):
   assert retrieved.id == created.id
   assert retrieved.max_papers == 30
   assert retrieved.shape == "cube"
+
+  stored = await db_session.get(Orb, created.id)
+  assert stored.owner_user_id == "owner-1"
+
+  dashboard = await orb_service.get_user_orbs(db_session, "owner-1")
+  assert [orb.id for orb in dashboard.created] == [created.id]
+  assert dashboard.created[0].paper_count == 0
+  assert dashboard.created[0].expires_at > datetime.now(timezone.utc)
+  assert dashboard.contributed == []
 
 
 def test_orb_shape_defaults_and_validation():
@@ -37,12 +46,15 @@ async def test_delete_orb(db_session):
   create_data = OrbCreate()
   created = await orb_service.create_orb(db_session, create_data)
   orb_id = created.id
+  await db_session.merge(OrbContributor(user_id="former-contributor", orb_id=orb_id))
+  await db_session.commit()
 
   deleted = await orb_service.delete_orb(db_session, orb_id)
   assert deleted is True
 
   retrieved = await orb_service.get_orb(db_session, orb_id)
   assert retrieved is None
+  assert await db_session.get(OrbContributor, ("former-contributor", orb_id)) is None
 
 
 @pytest.mark.asyncio
@@ -94,6 +106,12 @@ async def test_create_paper_with_eviction(db_session):
   assert paper1.id not in paper_ids
   assert paper2.id in paper_ids
   assert paper3.id in paper_ids
+  assert await db_session.get(OrbContributor, ("user1", orb_id)) is not None
+
+  dashboard = await orb_service.get_user_orbs(db_session, "user1")
+  assert dashboard.created == []
+  assert [orb.id for orb in dashboard.contributed] == [orb_id]
+  assert dashboard.contributed[0].paper_count == 2
 
 
 @pytest.mark.asyncio
