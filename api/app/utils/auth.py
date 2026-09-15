@@ -481,51 +481,8 @@ def extract_token_from_query(token: Optional[str]) -> Optional[str]:
 async def get_current_user_id(
   request: Request,
 ) -> str:
-  """
-  FastAPI dependency to extract and verify user ID from JWT token.
-  
-  Token can be provided in:
- 1. Query parameter: `?token=<jwt_token>`
- 2. Authorization header: `Authorization: Bearer <jwt_token>`
-  
-  Args:
-    request: FastAPI Request object
-    
-  Returns:
-    user_id: The authenticated user's ID (Clerk user ID)
-    
-  Raises:
-    HTTPException: If authentication fails
-  """
-  logger.info(f"REST API authentication request: {request.method} {request.url.path}")
-  
-  # Extract from request headers
-  auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
-  jwt_token = None
-  if auth_header:
-    jwt_token = extract_token_from_header(auth_header)
-    logger.debug("JWT token found in Authorization header")
-  
-  # Extract from query parameters if not found in headers
-  if not jwt_token:
-    token_param = request.query_params.get("token")
-    if token_param:
-      jwt_token = extract_token_from_query(token_param)
-      logger.debug("JWT token found in query parameter")
-  
-  # If no token provided, check if authentication is required
-  if not jwt_token:
-    if _settings.clerk_secret_key:
-      # Authentication is configured, require token
-      logger.warning("REST API request attempted without authentication token")
-      raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required"
-      )
-    else:
-      # Authentication not configured, use anonymous user (development only)
-      logger.warning("Clerk secret key not configured. Using anonymous user (development only).")
-      return "user:anonymous"
+  """Return the authenticated Clerk user ID."""
+  return (await get_current_user_info(request))["user_id"]
 
 
 async def get_optional_user_id(
