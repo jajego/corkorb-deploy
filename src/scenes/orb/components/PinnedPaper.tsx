@@ -438,7 +438,6 @@ export function PinnedPaper({
     }
   })
 
-  const usesWorldSpaceGeometry = shape !== 'sphere' || Boolean(positions && normals)
 
   return (
     <group>
@@ -448,7 +447,7 @@ export function PinnedPaper({
         onBeforeRender={() => updateGifTexture(texture)}
         onAfterRender={() => markPaperLoadStage('first-paper-drawn')}
         geometry={geometry}
-        quaternion={usesWorldSpaceGeometry ? identityQuaternion : quaternionValue}
+        quaternion={identityQuaternion}
         onPointerDown={handlePointerDown}
       >
         <meshStandardMaterial

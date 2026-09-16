@@ -87,8 +87,6 @@ export function usePaperCreation({
         y: pendingPaper.basisUp.y,
         z: pendingPaper.basisUp.z,
       },
-      positions: pendingPaper.positions ? Array.from(pendingPaper.positions) : undefined,
-      normals: pendingPaper.normals ? Array.from(pendingPaper.normals) : undefined,
       scale: pendingPaper.scale,
       aspect: pendingPaper.aspect,
       rotation: pendingPaper.rotation,

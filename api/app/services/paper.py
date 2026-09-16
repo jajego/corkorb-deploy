@@ -14,6 +14,24 @@ logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {"jpeg": "jpg", "jpg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
 
 
+def compact_paper_data(data):
+  """Keep legacy geometry unless all inputs for client reconstruction are present.
+
+  Return a copy: stored arrays remain available for rollback/older records.
+  """
+  if not data:
+    return data
+  vectors = {'center': ('x', 'y', 'z'), 'quaternion': ('x', 'y', 'z', 'w'),
+             'basisRight': ('x', 'y', 'z'), 'basisUp': ('x', 'y', 'z')}
+  for name, components in vectors.items():
+    vector = data.get(name)
+    if not isinstance(vector, dict) or any(vector.get(axis) is None for axis in components):
+      return data
+  if any(data.get(name) is None for name in ('scale', 'aspect', 'rotation', 'layerOffset')):
+    return data
+  return {key: value for key, value in data.items() if key not in ('positions', 'normals')}
+
+
 def paper_to_response(paper: Paper) -> PaperResponse:
   """Serialize both legacy nested and current flat pin formats."""
   pin_position = paper.pin_position or {}
@@ -30,7 +48,7 @@ def paper_to_response(paper: Paper) -> PaperResponse:
     created_at=paper.created_at,
     uploaded=paper.uploaded,
     validated=paper.validated,
-    data=PaperData(**paper.data) if paper.data else None,
+    data=PaperData(**compact_paper_data(paper.data)) if paper.data else None,
     pin=PinData(
       position=position,
       color=pin_position.get("color", "#ff4d4f"),
