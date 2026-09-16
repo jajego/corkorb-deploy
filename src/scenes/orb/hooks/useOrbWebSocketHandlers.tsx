@@ -1,4 +1,4 @@
-﻿import { useCallback, useRef } from 'react'
+﻿import { useCallback, useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { getLatestPaperVector } from '../utils/paper'
@@ -62,6 +62,14 @@ export function useOrbWebSocketHandlers({
 }: UseOrbWebSocketHandlersOptions) {
   // Track which papers have already shown NSFW toast to prevent duplicates
   const nsfwToastShownRef = useRef<Set<string>>(new Set())
+  const hydrationGeneration = useRef(0)
+  const hydrationDeletions = useRef(new Set<string>())
+  useEffect(() => {
+    const generation = hydrationGeneration
+    hydrationDeletions.current.clear()
+    return () => { generation.current++ }
+  }, [orbId])
+
 
   const onState = useCallback(
     async (papers: ServerPaper[]) => {
@@ -69,54 +77,42 @@ export function useOrbWebSocketHandlers({
       // State closes the initial join window on both a first connection and reconnect.
       initialConnectionCompleteRef.current = true
 
-      const validPapers = await hydrateServerPapers(papers, placedPapersRef.current)
-
-      // Preserve optimistic papers that haven't been replaced yet
-      // Also respect optimistically deleted papers (don't re-add them from server state)
-      setPlacedPapers((prev) => {
-        const optimisticPapersToKeep = prev.filter((paper) => {
-          if (paper.id.startsWith('optimistic-')) {
-            for (const [paperId, optimisticId] of optimisticPapersByIdRef.current.entries()) {
-              if (optimisticId === paper.id) {
-                const serverPaper = papers.find((p) => p.id === paperId)
-                return !serverPaper
-              }
-            }
-            for (const [sourceUrl, optimisticId] of optimisticPapersRef.current.entries()) {
-              if (optimisticId === paper.id) {
-                const serverPaper = papers.find((p) => p.source_url === sourceUrl)
-                return !serverPaper
-              }
-            }
-          }
-          return false
-        })
-
-        const validPapersFiltered = validPapers.filter((paper) => {
-          // Skip papers that were optimistically deleted
-          const wasDeleted = optimisticallyDeletedPapersRef.current.has(paper.id)
-          if (wasDeleted) {
-            const deletedPaper = optimisticallyDeletedPapersRef.current.get(paper.id)
-            if (!deletedPaper) {
-              optimisticallyDeletedPapersRef.current.delete(paper.id)
-            }
-            return false
-          }
-          // Skip papers that were deleted before they were created (pending deletions)
-          if (pendingDeletionsRef.current.has(paper.id)) {
-            pendingDeletionsRef.current.delete(paper.id)
-            return false
-          }
-          return true
-        })
-
-        const merged = [...validPapersFiltered, ...optimisticPapersToKeep]
+      const generation = ++hydrationGeneration.current
+      const snapshotIds = new Set(papers.map(paper => paper.id))
+      // Reconcile the snapshot once. Later image arrivals must preserve live additions.
+      setPlacedPapers(prev => {
+        if (generation !== hydrationGeneration.current) return prev
+        const retained = prev.filter(paper => snapshotIds.has(paper.id) || paper.id.startsWith('optimistic-'))
         for (const paper of prev) {
-          if (!merged.includes(paper)) paper.texture?.dispose()
+          if (!retained.includes(paper)) paper.texture?.dispose()
         }
-        setLastImageVector(getLatestPaperVector(merged))
-        placedPapersRef.current = merged
-        return merged
+        placedPapersRef.current = retained
+        setLastImageVector(getLatestPaperVector(retained))
+        return retained
+      })
+
+      await hydrateServerPapers(papers, placedPapersRef.current, paper => {
+        if (generation !== hydrationGeneration.current) return
+        setPlacedPapers(prev => {
+          if (generation !== hydrationGeneration.current ||
+              hydrationDeletions.current.has(paper.id) ||
+              optimisticallyDeletedPapersRef.current.has(paper.id) ||
+              pendingDeletionsRef.current.has(paper.id)) return prev
+          // A live event or another load may already have installed/updated this paper.
+          if (prev.some(current => current.id === paper.id && current.sourceUrl === paper.sourceUrl)) return prev
+          const optimisticId = optimisticPapersByIdRef.current.get(paper.id) ??
+            optimisticPapersRef.current.get(paper.sourceUrl)
+          const retained = prev.filter(current => current.id !== paper.id &&
+            !(current.id.startsWith('optimistic-') &&
+              (current.id === optimisticId || current.sourceUrl === paper.sourceUrl)))
+          const merged = [...retained, paper]
+          for (const current of prev) {
+            if (!merged.some(next => next.texture === current.texture)) current.texture?.dispose()
+          }
+          placedPapersRef.current = merged
+          setLastImageVector(getLatestPaperVector(merged))
+          return merged
+        })
       })
     },
     [
@@ -342,6 +338,7 @@ export function useOrbWebSocketHandlers({
       // Mark this paper as pending deletion (in case it hasn't been created yet)
       // This prevents the paper from appearing if paper_created arrives later
       pendingDeletionsRef.current.add(paperId)
+      hydrationDeletions.current.add(paperId)
 
       // Try to find the paper by real ID first
       let deletedPaper = placedPapersRef.current.find((paper) => paper.id === paperId)

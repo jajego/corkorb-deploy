@@ -173,7 +173,7 @@ async def upload_image(
     raise ValueError(f"Failed to upload image: {str(e)}")
 
 
-async def delete_image(orb_id: str, paper_id: str, file_extension: str) -> bool:
+async def delete_image(orb_id: str, paper_id: str, file_extension: str, *, strict: bool = False) -> bool:
   """
   Delete an image from S3.
   
@@ -218,11 +218,15 @@ async def delete_image(orb_id: str, paper_id: str, file_extension: str) -> bool:
       logger.warning(f"Image not found in S3: {s3_key}")
       return False
     else:
+      if strict:
+        raise
       error_message = e.response['Error']['Message']
       logger.error(f"S3 deletion failed: {error_code} - {error_message}")
       # Don't raise - deletion failures shouldn't break the flow
       return False
   except Exception as e:
+    if strict:
+      raise
     logger.error(f"Unexpected error during S3 deletion: {e}")
     # Don't raise - deletion failures shouldn't break the flow
     return False

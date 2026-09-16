@@ -71,6 +71,8 @@ class Settings(BaseSettings):
   )
   
   # AWS Rekognition Configuration
+  cloudfront_distribution_id: str = ''
+
   rekognition_min_confidence: float = Field(
     default=50.0,
     validation_alias=AliasChoices("APP_REKOGNITION_MIN_CONFIDENCE", "REKOGNITION_MIN_CONFIDENCE"),

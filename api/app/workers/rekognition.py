@@ -192,34 +192,9 @@ def delete_unsafe_paper(
   import asyncio
   
   async def _delete():
-    async with async_session_factory() as session:
-      try:
-        # 1. Delete from S3
-        deleted = await s3_service.delete_image(orb_id, paper_id, file_extension)
-        if deleted:
-          logger.info(f"Deleted unsafe image from S3: {orb_id}/{paper_id}.{file_extension}")
-        else:
-          logger.warning(f"Image not found in S3 (may have been deleted already): {orb_id}/{paper_id}.{file_extension}")
-        
-        # 2. Delete from database
-        deleted_db = await paper_service.delete_paper(session, paper_id)
-        if deleted_db:
-          logger.info(f"Deleted unsafe paper {paper_id} from database")
-        else:
-          logger.warning(f"Paper {paper_id} not found in database (may have been deleted already)")
-        
-        # 3. Broadcast paper_deleted message
-        message = PaperDeletedMessage(orb_id=orb_id, paper_id=paper_id)
-        await connection_manager.broadcast_to_orb(
-          orb_id,
-          message.model_dump(mode="json")
-        )
-        logger.info(f"Broadcasted paper_deleted message for unsafe paper {paper_id}")
-        
-      except Exception as e:
-        logger.error(f"Error deleting unsafe paper {paper_id}: {e}", exc_info=True)
-        # Don't raise - we've already logged the error
-  
+    from app.services.image_cleanup import remove_unsafe_paper
+    await remove_unsafe_paper(paper_id, orb_id, file_extension)
+
   # Run async function in sync context
   try:
     loop = asyncio.get_event_loop()

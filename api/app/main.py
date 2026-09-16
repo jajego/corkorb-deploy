@@ -1,4 +1,6 @@
 import logging
+import asyncio
+from contextlib import suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,6 +90,10 @@ def create_app() -> FastAPI:
   # Startup: Start Redis pub/sub subscriber for cross-instance broadcasting
   @app.on_event("startup")
   async def startup_event():
+    from .services.image_cleanup import cleanup_loop
+    if not settings.local_file_storage and not settings.cloudfront_distribution_id:
+      logger.error('APP_CLOUDFRONT_DISTRIBUTION_ID is missing; moderated CDN cleanup will remain pending')
+    app.state.image_cleanup_task = asyncio.create_task(cleanup_loop())
     try:
       await start_redis_subscriber(orb_ws.connection_manager)
       logger.info("Application startup complete")
@@ -99,6 +105,9 @@ def create_app() -> FastAPI:
   # Shutdown: Stop Redis pub/sub subscriber
   @app.on_event("shutdown")
   async def shutdown_event():
+    app.state.image_cleanup_task.cancel()
+    with suppress(asyncio.CancelledError):
+      await app.state.image_cleanup_task
     await stop_redis_subscriber()
     logger.info("Application shutdown complete")
 

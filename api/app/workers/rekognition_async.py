@@ -266,42 +266,8 @@ async def delete_unsafe_paper(
   unsafe_labels: list,
 ):
   """Delete unsafe paper from S3 and database, then broadcast deletion."""
-  try:
-    # 1. Delete from S3
-    deleted = await s3_service.delete_image(orb_id, paper_id, file_extension)
-    if deleted:
-      logger.info(f"Deleted unsafe image from S3: {orb_id}/{paper_id}.{file_extension}")
-    else:
-      logger.warning(
-        f"Image not found in S3 (may have been deleted already): "
-        f"{orb_id}/{paper_id}.{file_extension}"
-      )
-    
-    # 2. Delete from database
-    async with async_session_factory() as session:
-      deleted_db = await paper_service.delete_paper(session, paper_id)
-      if deleted_db:
-        logger.info(f"Deleted unsafe paper {paper_id} from database")
-      else:
-        logger.warning(
-          f"Paper {paper_id} not found in database (may have been deleted already)"
-        )
-      
-      # 3. Broadcast paper_deleted message with NSFW reason
-      message = PaperDeletedMessage(
-        orb_id=orb_id, 
-        paper_id=paper_id,
-        reason="nsfw_violation"
-      )
-      await connection_manager.broadcast_to_orb(
-        orb_id,
-        message.model_dump(mode="json")
-      )
-      logger.info(f"Broadcasted paper_deleted message for unsafe paper {paper_id} (reason: nsfw_violation)")
-      
-  except Exception as e:
-    logger.error(f"Error deleting unsafe paper {paper_id}: {e}", exc_info=True)
-    # Don't raise - we've already logged the error
+  from app.services.image_cleanup import remove_unsafe_paper
+  await remove_unsafe_paper(paper_id, orb_id, file_extension)
 
 
 async def mark_paper_validated(paper_id: str):

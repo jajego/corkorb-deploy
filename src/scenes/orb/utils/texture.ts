@@ -106,11 +106,14 @@ export function serverPaperToPlacedPaper(serverPaper: ServerPaper): Promise<Plac
 export async function hydrateServerPapers(
   serverPapers: ServerPaper[],
   existingPapers: PlacedPaper[],
+  onReady?: (paper: PlacedPaper) => void,
 ): Promise<PlacedPaper[]> {
   const existingById = new Map(existingPapers.map((paper) => [paper.id, paper]))
-  const hydrated = await Promise.all(serverPapers.map((serverPaper) => {
+  const hydrated = await Promise.all(serverPapers.map(async (serverPaper) => {
     const existing = existingById.get(serverPaper.id)
-    return existing?.sourceUrl === serverPaper.source_url ? existing : serverPaperToPlacedPaper(serverPaper)
+    const paper = existing?.sourceUrl === serverPaper.source_url ? existing : await serverPaperToPlacedPaper(serverPaper)
+    if (paper) onReady?.(paper)
+    return paper
   }))
   return hydrated.filter((paper): paper is PlacedPaper => paper !== null)
 }
@@ -189,4 +192,3 @@ export async function decodeTexture(file: File): Promise<{ texture: THREE.Textur
     })
   }
 }
-

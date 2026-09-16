@@ -54,15 +54,14 @@ export function useOrbInitialLoad({
         const orb = await response.json() as { papers?: ServerPaper[] }
         if (cancelled || websocketHasLoadedPapersRef.current || !orb.papers?.length) return
 
-        const fallbackPapers = await hydrateServerPapers(orb.papers, placedPapersRef.current)
-        setPlacedPapers((prev) => {
-          if (cancelled || websocketHasLoadedPapersRef.current) return prev
-
-          const existingIds = new Set(prev.map((paper) => paper.id))
-          const merged = [...prev, ...fallbackPapers.filter((paper) => !existingIds.has(paper.id))]
-          setLastImageVector(getLatestPaperVector(merged))
-          placedPapersRef.current = merged
-          return merged
+        await hydrateServerPapers(orb.papers, placedPapersRef.current, paper => {
+          setPlacedPapers(prev => {
+            if (cancelled || websocketHasLoadedPapersRef.current || prev.some(current => current.id === paper.id)) return prev
+            const merged = [...prev, paper]
+            setLastImageVector(getLatestPaperVector(merged))
+            placedPapersRef.current = merged
+            return merged
+          })
         })
       } catch (error) {
         logger.warn('REST paper fallback failed', error)
