@@ -82,6 +82,17 @@ export function useOrbInitialLoad({
       }
     }
     preloadCorkTexture()
+    // The small response can reveal the cork while the paper list downloads in parallel.
+    fetch(`${API_BASE_URL}/api/orbs/${orbId}?include_papers=false`, { signal: controller.signal })
+      .then(async response => {
+        if (!response.ok || cancelled) return
+        const orb = await response.json() as { shape?: CorkShape }
+        if (cancelled) return
+        setOrbShape(orb.shape ?? 'sphere')
+        setOrbExists(true)
+        markPaperLoadStage('cork-metadata')
+      })
+      .catch(error => { if (!cancelled) logger.warn('Cork metadata request failed', error) })
     checkOrbExists()
     return () => {
       cancelled = true

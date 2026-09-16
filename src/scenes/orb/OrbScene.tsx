@@ -1,6 +1,6 @@
 import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { useAuth, useUser } from '@clerk/react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as THREE from 'three'
 
@@ -754,11 +754,13 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
             })
           }}
         />
+        <Suspense fallback={null}>
         <NailGunFollower 
           active={attachActive} 
           pointer={pointerForInteraction} 
           isPinning={pendingPaper?.stage === 'pinning'} 
         />
+        </Suspense>
         {pendingPaper && pendingPaper.stage === 'positioning' ? (
           <GhostPaper
             texture={pendingPaper.texture}

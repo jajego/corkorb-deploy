@@ -1,5 +1,5 @@
 import { useTexture } from '@react-three/drei'
-import { useEffect } from 'react'
+import { useMemo } from 'react'
 import * as THREE from 'three'
 
 const DEFAULT_CORK_TEXTURE = '/textures/cork.jpg'
@@ -13,9 +13,9 @@ export function preloadCorkTexture() {
 export function useCorkTexture(url = DEFAULT_CORK_TEXTURE) {
   const texture = useTexture(url)
 
-  useEffect(() => {
-    if (!texture) return
-
+  // Configure before the first render/GPU upload, not in a post-paint effect.
+  // Otherwise the default 1x repeat can briefly look like a blurry cork texture.
+  return useMemo(() => {
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping
     texture.repeat.set(DEFAULT_REPEAT, DEFAULT_REPEAT)
     texture.anisotropy = DEFAULT_ANISOTROPY
@@ -23,8 +23,8 @@ export function useCorkTexture(url = DEFAULT_CORK_TEXTURE) {
     texture.minFilter = THREE.LinearMipmapLinearFilter
     texture.magFilter = THREE.LinearFilter
     texture.needsUpdate = true
+    return texture
   }, [texture])
 
-  return texture
 }
 
