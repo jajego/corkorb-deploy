@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
+import { beginPaperLoadTiming, markPaperLoadStage } from '../utils/loadTiming'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '@clerk/react'
 import * as THREE from 'three'
 import { createLogger } from '../../../utils/logger'
 import { preloadCorkTexture } from '../../../three/textures/useCorkTexture'
@@ -12,7 +12,6 @@ import type { CorkShape, PlacedPaper } from '../../../types/orb'
 const logger = createLogger('OrbScene')
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-const REST_FALLBACK_DELAY_MS = 5_000
 
 interface UseOrbInitialLoadOptions {
   orbId: string
@@ -33,63 +32,50 @@ export function useOrbInitialLoad({
   setLastImageVector,
   placedPapersRef,
 }: UseOrbInitialLoadOptions) {
-  const { getToken } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
     websocketHasLoadedPapersRef.current = false
     let cancelled = false
-    let fallbackTimeout: number | undefined
-
-    async function loadFallbackPapers() {
-      if (cancelled || websocketHasLoadedPapersRef.current) return
-
-      try {
-        const token = await getToken()
-        const response = await fetch(`${API_BASE_URL}/api/orbs/${orbId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        })
-        if (!response.ok) return
-
-        const orb = await response.json() as { papers?: ServerPaper[] }
-        if (cancelled || websocketHasLoadedPapersRef.current || !orb.papers?.length) return
-
-        await hydrateServerPapers(orb.papers, placedPapersRef.current, paper => {
-          setPlacedPapers(prev => {
-            if (cancelled || websocketHasLoadedPapersRef.current || prev.some(current => current.id === paper.id)) return prev
-            const merged = [...prev, paper]
-            setLastImageVector(getLatestPaperVector(merged))
-            placedPapersRef.current = merged
-            return merged
-          })
-        })
-      } catch (error) {
-        logger.warn('REST paper fallback failed', error)
-      }
-    }
+    let redirectTimeout: number | undefined
+    const controller = new AbortController()
+    beginPaperLoadTiming()
 
     async function checkOrbExists() {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/orbs/${orbId}?include_papers=false`)
+        const response = await fetch(`${API_BASE_URL}/api/orbs/${orbId}`, { signal: controller.signal })
 
+        if (cancelled) return
         if (response.status === 404) {
           setOrbExists(false)
-          setTimeout(() => {
+          redirectTimeout = window.setTimeout(() => {
             navigate('/')
           }, 2000)
         } else if (response.ok) {
           if (cancelled) return
-          const orb = await response.json() as { shape?: CorkShape }
+          const orb = await response.json() as { shape?: CorkShape; papers?: ServerPaper[] }
           if (cancelled) return
           setOrbShape(orb.shape ?? 'sphere')
           setOrbExists(true)
 
-          fallbackTimeout = window.setTimeout(loadFallbackPapers, REST_FALLBACK_DELAY_MS)
+          markPaperLoadStage('rest-metadata')
+          if (!websocketHasLoadedPapersRef.current) {
+            await hydrateServerPapers(orb.papers ?? [], placedPapersRef.current, paper => {
+              setPlacedPapers(prev => {
+                if (cancelled || websocketHasLoadedPapersRef.current || prev.some(current => current.id === paper.id)) return prev
+                const merged = [...prev, paper]
+                setLastImageVector(getLatestPaperVector(merged))
+                placedPapersRef.current = merged
+                return merged
+              })
+            })
+          }
         } else {
           setOrbExists(false)
           navigate('/')
         }
       } catch (error) {
+        if (cancelled) return
         logger.error('Failed to check orb existence and load papers', error)
         setOrbExists(false)
         navigate('/')
@@ -99,8 +85,9 @@ export function useOrbInitialLoad({
     checkOrbExists()
     return () => {
       cancelled = true
-      if (fallbackTimeout !== undefined) window.clearTimeout(fallbackTimeout)
+      controller.abort()
+      if (redirectTimeout !== undefined) window.clearTimeout(redirectTimeout)
     }
-  }, [orbId, getToken, navigate, websocketHasLoadedPapersRef, setOrbExists, setOrbShape, setPlacedPapers, setLastImageVector, placedPapersRef])
+  }, [orbId, navigate, websocketHasLoadedPapersRef, setOrbExists, setOrbShape, setPlacedPapers, setLastImageVector, placedPapersRef])
 }
 

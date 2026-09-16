@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { markPaperLoadStage } from './loadTiming'
 import { GifTexture } from '../../../utils/gifTexture'
 import { loadTextureFromUrl } from '../../../utils/loadTextureFromUrl'
 import { createLogger } from '../../../utils/logger'
@@ -29,7 +30,9 @@ export function applyLayerOffsetToGeometry(
 
 async function createPlacedPaper(serverPaper: ServerPaper): Promise<PlacedPaper | null> {
   try {
+    markPaperLoadStage('first-image-request')
     const { texture, aspect } = await loadTextureFromUrl(serverPaper.source_url)
+    markPaperLoadStage('first-texture-ready')
     
     const data = serverPaper.data || {}
     const center = data.center 

@@ -7,6 +7,8 @@ import { chromium } from 'playwright'
 const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
   import React, { useState } from 'react';
   import { createRoot } from 'react-dom/client';
+  import { MemoryRouter } from 'react-router-dom';
+  import { useOrbInitialLoad } from './src/scenes/orb/hooks/useOrbInitialLoad';
   import { useOrbWebSocketHandlers } from './src/scenes/orb/hooks/useOrbWebSocketHandlers';
   const ref = current => ({ current });
   const options = {
@@ -26,7 +28,15 @@ const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
   }
   window.paper = id => ({id, user_id: 'user', source_url: '/' + id + '.png', data: {},
     pin: {position: {x: 0, y: 0, z: 1}, color: '#fff'}, created_at: '2026-09-16T00:00:00Z'});
-  createRoot(document.getElementById('root')).render(React.createElement(App));
+  const noop = () => {};
+  function InitialApp() {
+    const [papers, setPlacedPapers] = useState([]);
+    useOrbInitialLoad({...options, setPlacedPapers, setOrbExists: noop, setOrbShape: noop, setLastImageVector: noop});
+    window.paperIds = papers.map(p => p.id);
+    return React.createElement('div', null, papers.length);
+  }
+  createRoot(document.getElementById('root')).render(location.pathname === '/initial'
+    ? React.createElement(MemoryRouter, null, React.createElement(InitialApp)) : React.createElement(App));
 ` }, bundle: true, write: false, format: 'esm', define: { 'import.meta.env': '{}' } })
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
 const waiting = new Map()
@@ -68,7 +78,23 @@ try {
   waiting.get('/slow2.png')()
   await page.evaluate(() => window.oldLoad)
   assert.deepEqual(await page.evaluate(() => window.paperIds), ['new'], 'Superseded snapshot must not reappear')
-  console.log('Passed: 20 papers render before delayed image; deletion during load; newer snapshot wins.')
+  let initialRequests = 0
+  await page.route('**/api/orbs/test*', async route => {
+    initialRequests++
+    assert.equal(new URL(route.request().url()).search, '', 'Initial request must include papers')
+    await route.fulfill({contentType: 'application/json', body: JSON.stringify({shape: 'sphere', papers: [{
+      id: 'initial', user_id: 'user', source_url: '/initial.png', data: {},
+      pin: {position: {x: 0, y: 0, z: 1}, color: '#fff'}, created_at: '2026-09-16T00:00:00Z',
+    }]})})
+  })
+  await page.goto(`http://127.0.0.1:${server.address().port}/initial`)
+  await page.waitForFunction(() => window.paperIds?.includes('initial'))
+  assert.equal(initialRequests, 1, 'Images should start from the first response without authentication or WebSocket setup')
+  const stages = await page.evaluate(() => performance.getEntriesByType('measure').map(entry => entry.name))
+  assert.ok(stages.includes('corkorb:rest-metadata'))
+  assert.ok(stages.includes('corkorb:first-image-request'))
+  assert.ok(stages.includes('corkorb:first-texture-ready'))
+  console.log('Passed: progressive rendering, deletion/live-event/reconnect races, immediate REST bootstrap, timing markers.')
 } finally {
   for (const send of waiting.values()) send()
   await browser?.close()

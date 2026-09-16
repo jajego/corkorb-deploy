@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { markPaperLoadStage } from '../utils/loadTiming'
 import { createLogger } from '../../../utils/logger'
 import { getLatestPaperVector } from '../utils/paper'
 import { hydrateServerPapers, serverPaperToPlacedPaper } from '../utils/texture'
@@ -73,6 +74,7 @@ export function useOrbWebSocketHandlers({
 
   const onState = useCallback(
     async (papers: ServerPaper[]) => {
+      markPaperLoadStage('websocket-metadata')
       websocketHasLoadedPapersRef.current = true
       // State closes the initial join window on both a first connection and reconnect.
       initialConnectionCompleteRef.current = true

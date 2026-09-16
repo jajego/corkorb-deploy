@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Html } from '@react-three/drei'
+import { markPaperLoadStage } from '../utils/loadTiming'
 import { useFrame, useThree } from '@react-three/fiber'
 import { updateGifTexture } from '../../../utils/gifTexture'
 import type { ThreeEvent } from '@react-three/fiber'
@@ -445,6 +446,7 @@ export function PinnedPaper({
         ref={meshRef}
         renderOrder={layerOffset}
         onBeforeRender={() => updateGifTexture(texture)}
+        onAfterRender={() => markPaperLoadStage('first-paper-drawn')}
         geometry={geometry}
         quaternion={usesWorldSpaceGeometry ? identityQuaternion : quaternionValue}
         onPointerDown={handlePointerDown}
