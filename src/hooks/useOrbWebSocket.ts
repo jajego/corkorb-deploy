@@ -1,4 +1,4 @@
-import { useAuth } from '@clerk/react'
+import { useAuth, useUser } from '@clerk/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { createLogger } from '../utils/logger'
@@ -45,12 +45,18 @@ export function useOrbWebSocket({
   onError,
   enabled = true,
 }: UseOrbWebSocketOptions) {
-  const { getToken } = useAuth()
+  const { getToken, isLoaded: authLoaded, sessionId } = useAuth()
+  const { isLoaded: userLoaded } = useUser()
+  const ready = enabled && authLoaded && userLoaded
+  const getTokenRef = useRef(getToken)
+  useEffect(() => { getTokenRef.current = getToken }, [getToken])
   const [status, setStatus] = useState<WebSocketStatus>('disconnected')
   const [connectedUsersCount, setConnectedUsersCount] = useState<number>(0)
   const [anonymousUsersCount, setAnonymousUsersCount] = useState<number>(0)
   const [connectedUsernames, setConnectedUsernames] = useState<string[]>([])
   const wsRef = useRef<WebSocket | null>(null)
+  const connectionGenerationRef = useRef(0)
+  const tokenPendingRef = useRef(false)
   const currentUserIdRef = useRef<string | null>(null) // Track current user's ID (still needed for filtering own user_joined messages)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const reconnectAttemptsRef = useRef(0)
@@ -126,7 +132,7 @@ export function useOrbWebSocket({
   )
 
   const connect = useCallback(async () => {
-    if (!enabled || !orbId) return
+    if (!ready || !orbId || tokenPendingRef.current) return
 
     // Check if already connected or connecting
     if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
@@ -143,9 +149,12 @@ export function useOrbWebSocket({
     setStatus('connecting')
     logger.debug(`Attempting to connect to orb: ${orbId}`)
 
+    const generation = connectionGenerationRef.current
+    tokenPendingRef.current = true
     try {
       // Get JWT token if user is authenticated (optional for viewing)
-      const token = await getToken()
+      const token = await getTokenRef.current()
+      if (generation !== connectionGenerationRef.current) return
 
       // Connect to WebSocket
       // Pass token and username as query parameters (frontend has direct access via useUser())
@@ -158,10 +167,12 @@ export function useOrbWebSocket({
         }
       }
       const ws = new WebSocket(url)
+      wsRef.current = ws
 
       // Set up onmessage handler FIRST, before onopen, so we can receive messages
       // that the server sends immediately after accepting the connection
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) return
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
           
@@ -316,6 +327,7 @@ export function useOrbWebSocket({
       }
 
       ws.onopen = () => {
+        if (wsRef.current !== ws) return
         logger.info(`Connected to orb: ${orbId}`)
         setStatus('connected')
         reconnectAttemptsRef.current = 0
@@ -343,12 +355,14 @@ export function useOrbWebSocket({
       }
 
       ws.onerror = (error) => {
+        if (wsRef.current !== ws) return
         logger.error('WebSocket error', error)
         setStatus('error')
         callbacksRef.current.onError?.('WebSocket error')
       }
 
       ws.onclose = (event) => {
+        if (wsRef.current !== ws) return
         logger.debug(`WebSocket closed: code=${event.code}, reason=${event.reason || 'none'}`)
         
         // Only update state if this is the current connection
@@ -391,27 +405,33 @@ export function useOrbWebSocket({
         }
       }
 
-      wsRef.current = ws
     } catch (error) {
+      if (generation !== connectionGenerationRef.current) return
       logger.error('Connection error', error)
       setStatus('error')
       callbacksRef.current.onError?.(error instanceof Error ? error.message : 'Connection error')
+    } finally {
+      if (generation === connectionGenerationRef.current) tokenPendingRef.current = false
     }
-  }, [orbId, enabled, getToken, wsUrl, username])
+  }, [orbId, enabled, ready, wsUrl, username])
 
   const disconnect = useCallback(() => {
+    connectionGenerationRef.current++
+    tokenPendingRef.current = false
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
     }
     if (wsRef.current) {
-      wsRef.current.close(1000, 'Client disconnect')
+      const ws = wsRef.current
       wsRef.current = null
+      ws.close(1000, 'Client disconnect')
     }
     setStatus('disconnected')
     setConnectedUsersCount(0)
     setAnonymousUsersCount(0)
     messageQueueRef.current = []
+    pendingRequestsRef.current.forEach(({ reject }) => reject(new Error('WebSocket disconnected')))
     pendingRequestsRef.current.clear()
   }, [])
 
@@ -495,27 +515,13 @@ export function useOrbWebSocket({
     }
   }, [enabled, orbId, connect]) // Removed isSignedIn - allow anonymous users to reconnect
 
-  // Connect on mount and when orbId changes
+  // Wait for Clerk's auth and profile before opening a socket. Cleanup also
+  // invalidates token requests still in flight (including StrictMode replay).
   useEffect(() => {
-    if (!enabled || !orbId) {
-      disconnect()
-      return
-    }
-
-    // Disconnect any existing connection first
     disconnect()
-
-    // Small delay to avoid race conditions and allow cleanup to complete
-    const timeoutId = setTimeout(() => {
-      // Check again if still enabled (might have changed during delay)
-      // Allow both signed-in and anonymous users to connect
-      if (enabled && orbId) {
-        connect()
-      }
-    }, 200)
+    void connect()
 
     return () => {
-      clearTimeout(timeoutId)
       disconnect()
       // Reset reconnect attempts when orbId or username changes
       reconnectAttemptsRef.current = 0
@@ -526,8 +532,7 @@ export function useOrbWebSocket({
       setAnonymousUsersCount(0)
       setConnectedUsernames([])
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orbId, enabled, username]) // connect and disconnect are stable (memoized), so we don't need them in deps
+  }, [connect, disconnect, sessionId])
 
   return {
     status,
