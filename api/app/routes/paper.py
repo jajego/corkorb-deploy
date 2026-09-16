@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
+from app.config import get_settings
 from app.schemas.paper import PaperCreate, PaperData, PaperResponse
 from app.schemas.pin import PinCreate
 from app.schemas.ws import PaperCreatedMessage
@@ -17,6 +18,7 @@ from app.services.gif import validate_gif
 from app.utils.auth import get_current_user_info
 from app.utils.authorization import require_orb_access
 from app.ws.orb import connection_manager
+from app.workers.rekognition_async import reserve_moderation_slot, release_moderation_slot
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -115,8 +117,13 @@ async def create_paper_with_image(
   - Other users receive CDN URL via WebSocket (already uploaded, fast to load)
   - CDN URL sent immediately after S3 upload (no waiting for Rekognition)
   """
+  moderation_reserved = False
   try:
     file_extension, content_type = validate_image_file(file)
+    if not get_settings().local_file_storage:
+      moderation_reserved = reserve_moderation_slot()
+      if not moderation_reserved:
+        raise HTTPException(status_code=429, detail='Image moderation is busy. Please try again shortly.', headers={'Retry-After': '30'})
     file_content = await file.read()
     
     # Check file size again (after reading - this is the definitive check)
@@ -200,13 +207,16 @@ async def create_paper_with_image(
     # 9. Trigger async Rekognition check (fire-and-forget, no Redis needed)
     from app.workers.rekognition_async import check_image_safety_async
 
-    asyncio.create_task(
+    moderation_task = asyncio.create_task(
       check_image_safety_async(
         paper_id=paper.id,
         orb_id=orb_id,
         file_extension=file_extension,
       )
     )
+    if moderation_reserved:
+      moderation_task.add_done_callback(lambda _task: release_moderation_slot())
+      moderation_reserved = False
     logger.info(f"Started Rekognition check for paper {paper.id} (background task)")
     
     # 8. Broadcast paper_created WebSocket message with CDN URL
@@ -234,4 +244,7 @@ async def create_paper_with_image(
       status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
       detail=f"Failed to create paper: {str(e)}"
     )
+  finally:
+    if moderation_reserved:
+      release_moderation_slot()
 

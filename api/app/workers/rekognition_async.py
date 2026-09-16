@@ -7,6 +7,7 @@ from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config
 from PIL import Image
 
 from app.config import get_settings
@@ -18,6 +19,29 @@ from app.services.gif import gif_moderation_images
 from app.ws.orb import connection_manager
 
 logger = logging.getLogger(__name__)
+
+MAX_MODERATION_CALLS = 8
+MAX_PENDING_MODERATIONS = 16
+_pending_moderations = 0
+_moderation_workers = asyncio.Semaphore(2)
+
+
+def reserve_moderation_slot() -> bool:
+  """Called on the API event loop before accepting an upload."""
+  global _pending_moderations
+  if _pending_moderations >= MAX_PENDING_MODERATIONS:
+    return False
+  _pending_moderations += 1
+  return True
+
+
+def release_moderation_slot() -> None:
+  global _pending_moderations
+  _pending_moderations -= 1
+
+
+class ModerationBudgetExceeded(Exception):
+  pass
 
 # Unsafe labels that trigger deletion
 UNSAFE_LABELS = {
@@ -55,6 +79,8 @@ def get_rekognition_client():
     aws_access_key_id=settings.aws_access_key_id,
     aws_secret_access_key=settings.aws_secret_access_key,
     region_name=rekognition_region,
+    # Every network attempt must count toward the per-upload budget.
+    config=Config(retries={'total_max_attempts': 1}, connect_timeout=5, read_timeout=20),
   )
 
 
@@ -78,6 +104,9 @@ async def check_image_safety_async(
   if settings.local_file_storage:
     await mark_paper_validated(paper_id)
     return
+
+  checked_frames: set[int] = set()
+  calls = 0
   
   for attempt in range(max_retries):
     try:
@@ -88,6 +117,7 @@ async def check_image_safety_async(
       
       # Decode and check sequentially in a worker thread; do not retain all frames.
       def _detect_moderation():
+        nonlocal calls
         rekognition = get_rekognition_client()
         images = iter([s3_uri])
         if file_extension.lower() in ('gif', 'webp'):
@@ -98,7 +128,7 @@ async def check_image_safety_async(
           with response['Body'] as body:
             content = body.read()
           if file_extension.lower() == 'gif':
-            images = gif_moderation_images(content)
+            images = gif_moderation_images(content, max_samples=MAX_MODERATION_CALLS)
           else:
             with Image.open(io.BytesIO(content)) as img:
               png_buffer = io.BytesIO()
@@ -106,7 +136,12 @@ async def check_image_safety_async(
               images = iter([{'Bytes': png_buffer.getvalue()}])
 
         try:
-          for image in images:
+          for index, image in enumerate(images):
+            if index in checked_frames:
+              continue
+            if calls >= MAX_MODERATION_CALLS:
+              raise ModerationBudgetExceeded()
+            calls += 1
             response = rekognition.detect_moderation_labels(
               Image=image, MinConfidence=settings.rekognition_min_confidence,
             )
@@ -115,12 +150,14 @@ async def check_image_safety_async(
                       and label.get('Confidence', 0) >= settings.rekognition_min_confidence]
             if unsafe:
               return unsafe
+            checked_frames.add(index)
           return []
         finally:
           if hasattr(images, 'close'):
             images.close()
 
-      moderation_labels = await asyncio.to_thread(_detect_moderation)
+      async with _moderation_workers:
+        moderation_labels = await asyncio.to_thread(_detect_moderation)
       
       # Check for unsafe labels
       unsafe_found = []
@@ -151,6 +188,9 @@ async def check_image_safety_async(
         await mark_paper_validated(paper_id)
         return
         
+    except ModerationBudgetExceeded:
+      logger.error('Moderation call budget exhausted for paper %s; leaving unvalidated', paper_id)
+      return
     except ClientError as e:
       error_code = e.response["Error"]["Code"]
       error_message = e.response["Error"]["Message"]

@@ -12,6 +12,8 @@ for name, disposal, loop, transparent in [
     ('opaque-clear', [1, 2, 1], 0, False),
     ('once', [1, 1, 1], None, False),
     ('repeat-once', [1, 1, 1], 1, False),
+    ('zero-delay', [1, 2, 1], 0, True),
+    ('fast-delay', [1, 2, 1], 0, True),
 ]:
     frames = []
     for i in range(3):
@@ -25,8 +27,9 @@ for name, disposal, loop, transparent in [
     if transparent:
         options['transparency'] = 0
     buffer = io.BytesIO()
+    delays = [0, 0, 0] if name == 'zero-delay' else [10, 10, 10] if name == 'fast-delay' else [100, 200, 50]
     frames[0].save(buffer, format='GIF', save_all=True, append_images=frames[1:],
-                   duration=[100, 200, 50], disposal=disposal, optimize=False, **options)
+                   duration=delays, disposal=disposal, optimize=False, **options)
     content = buffer.getvalue()
     expected = []
     with Image.open(io.BytesIO(content)) as image:
@@ -35,7 +38,8 @@ for name, disposal, loop, transparent in [
             canvas = Image.new('RGBA', image.size, (0, 0, 0, 0))
             canvas.alpha_composite(image.convert('RGBA'))
             expected.append(list(canvas.tobytes()))
-    fixtures.append({'name': name, 'base64': base64.b64encode(content).decode(), 'expected': expected})
+    fixtures.append({'name': name, 'base64': base64.b64encode(content).decode(), 'expected': expected,
+                     'delays': [max(50, delay or 100) for delay in delays]})
 
 destination = Path(__file__).parent / 'fixtures' / 'gifs.json'
 destination.parent.mkdir(exist_ok=True)

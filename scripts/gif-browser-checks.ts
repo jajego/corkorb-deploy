@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client'
 import { Canvas } from '@react-three/fiber'
 import { PinnedPaper } from '../src/scenes/orb/components/PinnedPaper'
 
-type Fixture = { name: string; base64: string; expected: number[][] }
+type Fixture = { name: string; base64: string; expected: number[][]; delays: number[] }
 function check(condition: unknown, message: string) {
   if (!condition) throw new Error(message)
 }
@@ -49,16 +49,21 @@ export async function runGifChecks(fixtures: Fixture[]) {
     const gif = texture as GifTexture
     check(matches(gif, fixture.expected[0]), fixture.name + ': first frame mismatch')
     gif.update(1000)
-    gif.update(1099)
+    const secondFrameAt = 1000 + fixture.delays[0]
+    gif.update(secondFrameAt - 1)
     check(matches(gif, fixture.expected[0]), fixture.name + ': frame advanced too early')
-    gif.update(1100)
+    gif.update(secondFrameAt)
     check(matches(gif, fixture.expected[1]), fixture.name + ': second frame mismatch')
-    gif.update(1300)
+    let time = secondFrameAt + fixture.delays[1]
+    gif.update(time)
     check(matches(gif, fixture.expected[2]), fixture.name + ': disposal/transparency mismatch')
-    gif.update(1350)
+    time += fixture.delays[2]
+    gif.update(time - 1)
+    check(matches(gif, fixture.expected[2]), fixture.name + ': minimum frame delay violated')
+    gif.update(time)
     check(matches(gif, fixture.expected[fixture.name === 'once' ? 2 : 0]), fixture.name + ': loop mismatch')
     if (fixture.name === 'repeat-once') {
-      gif.update(1450); gif.update(1650); gif.update(1700)
+      gif.update(time + 100); gif.update(time + 300); gif.update(time + 400)
       check(matches(gif, fixture.expected[2]), 'Finite loop repeated too often')
     }
     const version = gif.version

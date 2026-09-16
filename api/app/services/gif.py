@@ -46,10 +46,16 @@ def validate_gif(content: bytes) -> None:
     frame.close()
 
 
-def gif_moderation_images(content: bytes) -> Iterator[dict]:
-  for frame in gif_images(content):
+def gif_moderation_images(content: bytes, max_samples: int = 8) -> Iterator[dict]:
+  with Image.open(io.BytesIO(content)) as image:
+    count = image.n_frames
+  samples = min(count, max_samples)
+  selected = {i * (count - 1) // max(1, samples - 1) for i in range(samples)}
+  for index, frame in enumerate(gif_images(content)):
     # Use a neutral background for moderation; display preserves transparency.
     with frame:
+      if index not in selected:
+        continue
       with Image.new("RGB", frame.size, "#f8f4ea") as background:
         background.paste(frame, mask=frame.getchannel("A"))
         buffer = io.BytesIO()

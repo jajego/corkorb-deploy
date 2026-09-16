@@ -9,6 +9,8 @@ const MAX_BYTES = 10 * 1024 * 1024
 const MAX_DIMENSION = 1024
 const MAX_FRAMES = 120
 const MAX_PIXELS = 32 * 1024 * 1024
+// Limit each paper to twenty texture uploads per second, including after a slow frame.
+const frameDelay = (delay?: number) => Math.max(50, delay || 100)
 
 export function isGif(bytes: ArrayBuffer): boolean {
   const header = new TextDecoder().decode(new Uint8Array(bytes, 0, Math.min(6, bytes.byteLength)))
@@ -109,7 +111,7 @@ export class GifTexture extends THREE.CanvasTexture {
         return
       }
       // Resume without decoding a backlog after tab hiding or frustum culling.
-      if (!deadline || now - lastUpdate > 250) deadline = now + Math.max(20, previous?.delay ?? 100)
+      if (!deadline || now - lastUpdate > 250) deadline = now + frameDelay(previous?.delay)
       lastUpdate = now
       if (now < deadline) return
       if (index + 1 === frames.length) {
@@ -118,7 +120,7 @@ export class GifTexture extends THREE.CanvasTexture {
       }
       index = (index + 1) % frames.length
       draw()
-      deadline += Math.max(20, previous?.delay ?? 100)
+      deadline = now + frameDelay(previous?.delay)
     }
   }
 
