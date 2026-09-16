@@ -1,9 +1,10 @@
 import * as THREE from 'three'
+import { GifTexture } from '../../../utils/gifTexture'
 import { loadTextureFromUrl } from '../../../utils/loadTextureFromUrl'
 import { createLogger } from '../../../utils/logger'
 import { arrayToVector, arrayToQuaternion } from './math'
 import { PAPER_SPHERE_RADIUS, PAPER_OFFSET } from '../components/papers/constants'
-import { DEFAULT_PAPER_SCALE, PAPER_BACKGROUND_COLOR } from './constants'
+import { DEFAULT_PAPER_SCALE } from './constants'
 import type { ServerPaper } from '../../../types/websocket'
 import type { PinInstance, PlacedPaper } from '../../../types/orb'
 
@@ -115,6 +116,10 @@ export async function hydrateServerPapers(
 }
 
 export async function decodeTexture(file: File): Promise<{ texture: THREE.Texture; aspect: number }> {
+  if (file.type.toLowerCase() === 'image/gif') {
+    const texture = new GifTexture(await file.arrayBuffer())
+    return { texture, aspect: texture.image.width / texture.image.height }
+  }
   const maxDimension = 2048
 
   const makeTextureFromBitmap = (bitmap: ImageBitmap) => {
@@ -131,10 +136,6 @@ export async function decodeTexture(file: File): Promise<{ texture: THREE.Textur
       bitmap.close()
       throw new Error('Unable to create 2D context for texture decoding')
     }
-    context.save()
-    context.fillStyle = PAPER_BACKGROUND_COLOR
-    context.fillRect(0, 0, targetWidth, targetHeight)
-    context.restore()
     context.drawImage(bitmap, 0, 0, targetWidth, targetHeight)
     bitmap.close()
     const texture = new THREE.CanvasTexture(canvas)
@@ -170,10 +171,6 @@ export async function decodeTexture(file: File): Promise<{ texture: THREE.Textur
           reject(new Error('Unable to create 2D context for texture fallback'))
           return
         }
-        context.save()
-        context.fillStyle = PAPER_BACKGROUND_COLOR
-        context.fillRect(0, 0, targetWidth, targetHeight)
-        context.restore()
         context.drawImage(image, 0, 0, targetWidth, targetHeight)
         const texture = new THREE.CanvasTexture(canvas)
         texture.needsUpdate = true

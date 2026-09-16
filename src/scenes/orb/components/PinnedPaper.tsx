@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Html } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
+import { updateGifTexture } from '../../../utils/gifTexture'
 import type { ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -442,6 +443,8 @@ export function PinnedPaper({
     <group>
       <mesh
         ref={meshRef}
+        renderOrder={layerOffset}
+        onBeforeRender={() => updateGifTexture(texture)}
         geometry={geometry}
         quaternion={usesWorldSpaceGeometry ? identityQuaternion : quaternionValue}
         onPointerDown={handlePointerDown}
@@ -449,6 +452,9 @@ export function PinnedPaper({
         <meshStandardMaterial
           ref={materialRef}
           transparent
+          alphaTest={0.01}
+          depthWrite={false}
+          forceSinglePass
           roughness={0.92}
           metalness={0}
           side={THREE.DoubleSide}

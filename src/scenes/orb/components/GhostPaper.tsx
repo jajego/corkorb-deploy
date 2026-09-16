@@ -1,4 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
+import { GifTexture, updateGifTexture } from '../../../utils/gifTexture'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 
@@ -111,8 +112,8 @@ export function GhostPaper({
     if (!texture) return
     texture.wrapS = THREE.ClampToEdgeWrapping
     texture.wrapT = THREE.ClampToEdgeWrapping
-    texture.generateMipmaps = true
-    texture.minFilter = THREE.LinearMipmapLinearFilter
+    texture.generateMipmaps = !(texture instanceof GifTexture)
+    texture.minFilter = texture instanceof GifTexture ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter
     texture.magFilter = THREE.LinearFilter
     texture.anisotropy =
       typeof gl.capabilities.getMaxAnisotropy === 'function'
@@ -361,11 +362,14 @@ export function GhostPaper({
   })
 
   return (
-    <mesh ref={meshRef} geometry={geometry} visible={false}>
+    <mesh ref={meshRef} geometry={geometry} renderOrder={layerOffset} visible={false} onBeforeRender={() => updateGifTexture(texture)}>
       <primitive ref={geometryRef} object={geometry} attach="geometry" />
       <meshStandardMaterial
         ref={materialRef}
         transparent
+        alphaTest={0.01}
+        depthWrite={false}
+        forceSinglePass
         roughness={0.92}
         metalness={0}
         side={THREE.DoubleSide}

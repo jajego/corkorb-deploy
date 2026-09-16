@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "npm run test:geometry",
+    "test:gif": "node scripts/test-gif.mjs",
     "test:geometry": "vite build --ssr scripts/test-polyhedron-paper-wrap.mjs --outDir node_modules/.cache/corkorb-geometry-test && node node_modules/.cache/corkorb-geometry-test/test-polyhedron-paper-wrap.js",
     "preview": "vite preview",
     "start": "vite preview",
@@ -19,6 +20,7 @@
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",
     "@use-gesture/react": "^10.3.1",
+    "gifuct-js": "^2.1.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^6.28.0",
@@ -34,6 +36,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",
     "globals": "^16.4.0",
+    "playwright": "^1.63.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.45.0",
     "vite": "^7.1.7"

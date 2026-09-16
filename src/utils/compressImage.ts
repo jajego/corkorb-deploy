@@ -16,6 +16,7 @@
  */
 
 import { createLogger } from './logger'
+import { parsePaperGif } from './gifTexture'
 
 const logger = createLogger('compressImage')
 
@@ -142,6 +143,15 @@ export async function compressImage(
   const startTime = performance.now()
   const originalSize = file.size
 
+  // Canvas encoding is static. Preserve the original GIF bytes and animation.
+  if (file.type.toLowerCase() === 'image/gif') {
+    const { width, height } = parsePaperGif(await file.arrayBuffer())
+    return {
+      blob: file, mimeType: 'image/gif', extension: 'gif', originalSize,
+      compressedSize: file.size, compressionRatio: 1, width, height, aspect: width / height,
+    }
+  }
+
   logger.debug(`Compressing image: ${file.name} (${(originalSize / 1024).toFixed(2)}KB)`)
 
   try {
@@ -169,11 +179,7 @@ export async function compressImage(
       throw new Error('Unable to create 2D context for image compression')
     }
 
-    // Fill with white background (handles transparency)
-    context.fillStyle = '#f8f4ea' // Same as PAPER_BACKGROUND_COLOR
-    context.fillRect(0, 0, targetWidth, targetHeight)
-
-    // Draw image
+    // Preserve source alpha for transparent stickers.
     context.drawImage(image, 0, 0, targetWidth, targetHeight)
     image.close()
 

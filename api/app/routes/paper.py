@@ -1,6 +1,7 @@
 """REST API routes for paper operations."""
 
 import json
+import asyncio
 import logging
 from typing import Annotated, Optional
 
@@ -12,6 +13,7 @@ from app.schemas.paper import PaperCreate, PaperData, PaperResponse
 from app.schemas.pin import PinCreate
 from app.schemas.ws import PaperCreatedMessage
 from app.services import paper as paper_service, s3 as s3_service
+from app.services.gif import validate_gif
 from app.utils.auth import get_current_user_info
 from app.utils.authorization import require_orb_access
 from app.ws.orb import connection_manager
@@ -124,6 +126,10 @@ async def create_paper_with_image(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"File size ({actual_size / 1024 / 1024:.2f}MB) exceeds maximum of {MAX_FILE_SIZE / 1024 / 1024}MB. Please use a smaller image or compress it more."
       )
+
+    if file_extension == 'gif' or content_type == 'image/gif' or file_content[:6] in (b'GIF87a', b'GIF89a'):
+      await asyncio.to_thread(validate_gif, file_content)
+      file_extension, content_type = 'gif', 'image/gif'
     
     # 3. Extract user info
     user_id = user_info["user_id"]
@@ -192,7 +198,6 @@ async def create_paper_with_image(
     logger.info(f"Created paper {paper.id} for orb {orb_id} with CDN URL (username: {paper_username})")
     
     # 9. Trigger async Rekognition check (fire-and-forget, no Redis needed)
-    import asyncio
     from app.workers.rekognition_async import check_image_safety_async
 
     asyncio.create_task(

@@ -14,6 +14,7 @@ from app.db.session import async_session_factory
 from app.schemas.paper import PaperUpdate
 from app.schemas.ws import PaperDeletedMessage
 from app.services import paper as paper_service, s3 as s3_service
+from app.services.gif import gif_moderation_images
 from app.ws.orb import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -85,47 +86,41 @@ async def check_image_safety_async(
       
       logger.info(f"Checking image safety for paper {paper_id} using Rekognition (attempt {attempt + 1})")
       
-      # Rekognition doesn't support WebP - convert to PNG if needed
-      rekognition_image = s3_uri
-      if file_extension.lower() == 'webp':
-        logger.info(f"Converting WebP to PNG for Rekognition (paper {paper_id})")
-        
-        # Download WebP from S3
-        s3_client = s3_service.get_s3_client()
-        def _download_webp():
-          response = s3_client.get_object(
-            Bucket=settings.aws_s3_bucket_name,
-            Key=s3_service.get_s3_key(orb_id, paper_id, file_extension)
-          )
-          return response['Body'].read()
-        
-        webp_bytes = await asyncio.to_thread(_download_webp)
-        
-        # Convert WebP to PNG in memory
-        def _convert_webp_to_png():
-          img = Image.open(io.BytesIO(webp_bytes))
-          png_buffer = io.BytesIO()
-          img.save(png_buffer, format='PNG')
-          return png_buffer.getvalue()
-        
-        png_bytes = await asyncio.to_thread(_convert_webp_to_png)
-        
-        # Use bytes API for Rekognition (WebP converted to PNG)
-        rekognition_image = {'Bytes': png_bytes}
-      else:
-        # Use S3 URI for supported formats (JPEG, PNG, GIF)
-        rekognition_image = s3_uri
-      
-      # Call Rekognition API (run in thread pool since boto3 is sync)
+      # Decode and check sequentially in a worker thread; do not retain all frames.
       def _detect_moderation():
         rekognition = get_rekognition_client()
-        return rekognition.detect_moderation_labels(
-          Image=rekognition_image,
-          MinConfidence=settings.rekognition_min_confidence,
-        )
-      
-      response = await asyncio.to_thread(_detect_moderation)
-      moderation_labels = response.get("ModerationLabels", [])
+        images = iter([s3_uri])
+        if file_extension.lower() in ('gif', 'webp'):
+          response = s3_service.get_s3_client().get_object(
+            Bucket=settings.aws_s3_bucket_name,
+            Key=s3_service.get_s3_key(orb_id, paper_id, file_extension),
+          )
+          with response['Body'] as body:
+            content = body.read()
+          if file_extension.lower() == 'gif':
+            images = gif_moderation_images(content)
+          else:
+            with Image.open(io.BytesIO(content)) as img:
+              png_buffer = io.BytesIO()
+              img.save(png_buffer, format='PNG')
+              images = iter([{'Bytes': png_buffer.getvalue()}])
+
+        try:
+          for image in images:
+            response = rekognition.detect_moderation_labels(
+              Image=image, MinConfidence=settings.rekognition_min_confidence,
+            )
+            unsafe = [label for label in response.get('ModerationLabels', [])
+                      if label.get('Name') in UNSAFE_LABELS
+                      and label.get('Confidence', 0) >= settings.rekognition_min_confidence]
+            if unsafe:
+              return unsafe
+          return []
+        finally:
+          if hasattr(images, 'close'):
+            images.close()
+
+      moderation_labels = await asyncio.to_thread(_detect_moderation)
       
       # Check for unsafe labels
       unsafe_found = []

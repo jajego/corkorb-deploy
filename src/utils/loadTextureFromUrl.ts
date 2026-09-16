@@ -1,18 +1,24 @@
 import * as THREE from 'three'
+import { GifTexture, isGif } from './gifTexture'
 
-/**
- * Paper background color for transparent images.
- * Must match the color used in decodeTexture.
- */
-const PAPER_BACKGROUND_COLOR = '#f8f4ea'
 const MAX_DIMENSION = 2048
 
 /**
  * Load a texture from a URL (data URL or regular URL).
- * Applies a paper background color to transparent images (same as decodeTexture).
+ * Preserves transparent pixels (same as decodeTexture).
  * Returns the texture and its aspect ratio.
  */
 export async function loadTextureFromUrl(url: string): Promise<{ texture: THREE.Texture; aspect: number }> {
+  if (/\.gif(?:[?#]|$)/i.test(url) || /^data:image\/gif[;,]/i.test(url)) {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('Unable to load GIF image.')
+    const bytes = await response.arrayBuffer()
+    // Older uploads can contain PNG bytes mislabeled as .gif. Keep them viewable.
+    if (isGif(bytes)) {
+      const texture = new GifTexture(bytes)
+      return { texture, aspect: texture.image.width / texture.image.height }
+    }
+  }
   return new Promise((resolve, reject) => {
     // Load the image first
     const image = new Image()
@@ -26,7 +32,7 @@ export async function loadTextureFromUrl(url: string): Promise<{ texture: THREE.
         const targetWidth = Math.max(1, Math.round(width * scale))
         const targetHeight = Math.max(1, Math.round(height * scale))
         
-        // Create canvas and apply paper background color (same as decodeTexture)
+        // Create a transparent canvas (same as decodeTexture).
         const canvas = document.createElement('canvas')
         canvas.width = targetWidth
         canvas.height = targetHeight
@@ -37,13 +43,7 @@ export async function loadTextureFromUrl(url: string): Promise<{ texture: THREE.
           return
         }
         
-        // Fill canvas with paper background color (handles transparent images)
-        context.save()
-        context.fillStyle = PAPER_BACKGROUND_COLOR
-        context.fillRect(0, 0, targetWidth, targetHeight)
-        context.restore()
-        
-        // Draw the image on top of the background
+        // Preserve the image's alpha channel.
         context.drawImage(image, 0, 0, targetWidth, targetHeight)
         
         // Create texture from canvas

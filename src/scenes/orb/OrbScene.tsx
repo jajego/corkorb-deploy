@@ -74,6 +74,12 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
   const [pendingPaper, setPendingPaper] = useState<PendingPaper | null>(null)
   const [placedPapers, setPlacedPapers] = useState<PlacedPaper[]>([])
   const placedPapersRef = useRef<PlacedPaper[]>([])
+  const pendingPaperRef = useRef(pendingPaper)
+  useEffect(() => { pendingPaperRef.current = pendingPaper }, [pendingPaper])
+  useEffect(() => () => {
+    pendingPaperRef.current?.texture?.dispose()
+    for (const paper of placedPapersRef.current) paper.texture?.dispose()
+  }, [])
   const websocketHasLoadedPapersRef = useRef(false)
   const initialConnectionCompleteRef = useRef(false)
   const seenUsersRef = useRef<Set<string>>(new Set())

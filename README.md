@@ -87,6 +87,8 @@ Apply existing schema changes with `cd api; alembic upgrade head`. Create a migr
 
 ## Deployment
 
+GIF upload limits, playback behavior, moderation costs, and regression checks are documented in [GIF_SUPPORT.md](GIF_SUPPORT.md).
+
 Vercel builds the frontend with `npm run build` and serves `dist` (see `vercel.json`). Set `VITE_API_BASE_URL` to the public Railway API URL and configure Clerk's allowed origins/redirect URLs for `https://corkorb.com`.
 
 Railway builds the backend from `api/requirements.txt`. The checked-in `api/railway.json` applies migrations as a pre-deploy command, so a failed migration prevents the new application version from starting. Set the API service start command to:

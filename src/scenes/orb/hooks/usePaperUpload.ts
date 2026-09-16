@@ -106,6 +106,12 @@ export function usePaperUpload({
       } catch (error: unknown) {
         logger.error('Failed to process image', error)
 
+        // GIF validation must not fall back to uploading an unchecked original.
+        if (fileType === 'image/gif') {
+          onError(error instanceof Error ? error.message : 'Failed to load GIF image.')
+          return
+        }
+
         // Check if it's a non-image file error (createImageBitmap fails for non-images)
         if (error instanceof Error && (error.message.includes('image') || error.message.includes('decode'))) {
           onError('This file is not a valid image. Please select an image file.')
