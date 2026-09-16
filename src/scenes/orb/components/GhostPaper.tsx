@@ -12,12 +12,12 @@ import {
 } from './papers/constants'
 import { getPaperBumpTexture } from './papers/paperTexture'
 import type { CorkShape } from '../../../types/orb'
+import { orientPaperToCamera } from '../utils/paperOrientation'
 import { buildPolyhedronPaperGeometry } from '../utils/polyhedronPaper'
 
 const outwardNormal = new THREE.Vector3()
 const tangentRight = new THREE.Vector3()
 const tangentUp = new THREE.Vector3()
-const projectedRight = new THREE.Vector3()
 const centerPosition = new THREE.Vector3()
 const vertexPosition = new THREE.Vector3()
 const vertexDirection = new THREE.Vector3()
@@ -29,8 +29,6 @@ const surfaceNormalMatrix = new THREE.Matrix3()
 const rotationX = new THREE.Quaternion()
 const rotationY = new THREE.Quaternion()
 const rotationCombined = new THREE.Quaternion()
-const worldUp = new THREE.Vector3(0, 1, 0)
-const worldRight = new THREE.Vector3(1, 0, 0)
 
 const quaternionBasis = new THREE.Quaternion()
 const placeholderColor = new THREE.Color('#c8ccd3')
@@ -183,20 +181,7 @@ export function GhostPaper({
         .addScaledVector(outwardNormal, paperOffset)
     }
 
-    projectedRight.copy(worldUp).cross(outwardNormal)
-    if (projectedRight.lengthSq() < 1e-6) {
-      projectedRight.copy(worldRight).cross(outwardNormal)
-    }
-    projectedRight.normalize()
-
-    tangentRight.copy(projectedRight)
-    tangentUp.copy(outwardNormal).cross(tangentRight).normalize()
-
-    if (rotation !== 0) {
-      const rotationQuat = new THREE.Quaternion().setFromAxisAngle(outwardNormal, rotation)
-      tangentRight.applyQuaternion(rotationQuat).normalize()
-      tangentUp.applyQuaternion(rotationQuat).normalize()
-    }
+    orientPaperToCamera(outwardNormal, camera.quaternion, rotation, tangentRight, tangentUp)
 
     let positions: THREE.BufferAttribute
     let normals: THREE.BufferAttribute

@@ -42,6 +42,7 @@ import {
   PIN_COLORS,
   initialSpherical,
 } from './utils/constants'
+import { orientPaperToCamera } from './utils/paperOrientation'
 import { applyLayerOffsetToGeometry } from './utils/texture'
 import { computeNextLayerOffset, makeId } from './utils/paper'
 import { useOrbInitialLoad } from './hooks/useOrbInitialLoad'
@@ -52,8 +53,6 @@ import { usePaperUpload } from './hooks/usePaperUpload'
 import { usePaperDeletion } from './hooks/usePaperDeletion'
 import { useOrbWebSocketHandlers } from './hooks/useOrbWebSocketHandlers'
 
-const cameraRight = new THREE.Vector3()
-const cameraUp = new THREE.Vector3()
 
 
 type OrbSceneProps = {
@@ -599,26 +598,9 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
         ? normal.clone().multiplyScalar(PAPER_SPHERE_RADIUS + PAPER_OFFSET)
         : point.clone().addScaledVector(normal, POLYHEDRON_PAPER_OFFSET + layerOffset)
 
-      cameraRight.set(1, 0, 0).applyQuaternion(camera.quaternion)
-      cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion)
-
-      const projectedRight = cameraRight.clone().projectOnPlane(normal)
-      if (projectedRight.lengthSq() < 1e-6) {
-        projectedRight.copy(cameraUp.clone().projectOnPlane(normal))
-        if (projectedRight.lengthSq() < 1e-6) {
-          projectedRight.copy(new THREE.Vector3(0, 0, 1)).projectOnPlane(normal)
-        }
-      }
-      projectedRight.normalize()
-
-      const tangentUp = normal.clone().cross(projectedRight).normalize()
-
-      const rotation = pendingPaper.rotation ?? 0
-      if (rotation !== 0) {
-        const rotationQuat = new THREE.Quaternion().setFromAxisAngle(normal, rotation)
-        projectedRight.applyQuaternion(rotationQuat).normalize()
-        tangentUp.applyQuaternion(rotationQuat).normalize()
-      }
+      const projectedRight = new THREE.Vector3()
+      const tangentUp = new THREE.Vector3()
+      orientPaperToCamera(normal, camera.quaternion, pendingPaper.rotation ?? 0, projectedRight, tangentUp)
 
       const basisMatrix = new THREE.Matrix4()
       basisMatrix.makeBasis(projectedRight, tangentUp, normal)
