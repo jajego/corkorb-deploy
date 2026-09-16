@@ -74,7 +74,6 @@ export function OrbDebugHud({
         </button>
 
         <div className="orb-hud__identity">
-          <span>Shared cork</span>
           <strong title={orbId}>{orbId}</strong>
         </div>
 

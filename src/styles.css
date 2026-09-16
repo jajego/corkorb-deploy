@@ -49,7 +49,7 @@ body,
   left: 12px;
   right: 12px;
   display: grid;
-  grid-template-columns: auto minmax(150px, 245px) minmax(0, 1fr) auto;
+  grid-template-columns: auto fit-content(40%) minmax(0, 1fr) auto;
   align-items: start;
   gap: 8px;
   color: #211d18;
@@ -77,8 +77,8 @@ body,
 
 .orb-hud__home,
 .orb-hud__upload {
-  min-height: 42px;
-  padding: 8px 11px;
+  min-height: 36px;
+  padding: 6px 11px;
   border-radius: 3px;
   font: 700 14px/1 'Times New Roman', Times, serif;
   cursor: pointer;
@@ -94,19 +94,15 @@ body,
 
 .orb-hud__identity {
   display: flex;
+  width: fit-content;
+  max-width: 100%;
   flex-direction: column;
   justify-content: center;
   min-width: 0;
-  min-height: 42px;
-  padding: 6px 10px;
+  min-height: 36px;
+  padding: 4px 10px;
   border-radius: 3px;
   text-align: left;
-}
-
-.orb-hud__identity span {
-  font-size: 9px;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
 }
 
 .orb-hud__identity strong {
@@ -123,8 +119,8 @@ body,
   justify-content: center;
   flex-wrap: wrap;
   gap: 7px 12px;
-  min-height: 42px;
-  padding: 6px 10px;
+  min-height: 36px;
+  padding: 4px 10px;
   border-radius: 3px;
   font-size: 12px;
 }
@@ -300,12 +296,12 @@ body,
 @media (max-width: 760px) {
   .orb-hud {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
+    gap: 4px;
   }
 
   .orb-hud__home { grid-column: 1; grid-row: 1; width: fit-content; }
   .orb-hud__upload { grid-column: 2; grid-row: 1; }
-  .orb-hud__identity { grid-column: 1 / -1; grid-row: 2; min-height: 30px; flex-direction: row; align-items: center; gap: 8px; }
+  .orb-hud__identity { grid-column: 1 / -1; grid-row: 2; min-height: 28px; flex-direction: row; align-items: center; }
   .orb-hud__controls { grid-column: 1 / -1; grid-row: 3; }
 
   .orb-hud-footer__account > span:first-child { display: none; }
