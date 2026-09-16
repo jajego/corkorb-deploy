@@ -2,6 +2,8 @@
 
 import json
 import asyncio
+import io
+from PIL import Image
 import logging
 from typing import Annotated, Optional
 
@@ -15,6 +17,8 @@ from app.schemas.pin import PinCreate
 from app.schemas.ws import PaperCreatedMessage
 from app.services import paper as paper_service, s3 as s3_service
 from app.services.gif import validate_gif
+from app.services.usage import reserve_upload
+from app.services.usage import MonthlyModerationLimit, reserve_moderation_calls
 from app.utils.auth import get_current_user_info
 from app.utils.authorization import require_orb_access
 from app.ws.orb import connection_manager
@@ -98,26 +102,9 @@ async def create_paper_with_image(
   session: Annotated[AsyncSession, Depends(get_session)] = None,
   user_info: Annotated[dict, Depends(get_current_user_info)] = None,
 ):
-  """
-  Create a new paper with image upload.
-  
-  Flow:
-  1. Validate file (type, size)
-  2. Read file content
-  3. Generate paper ID
-  4. Upload to S3 synchronously (gets CDN URL immediately)
-  5. Create Paper record with CDN URL (uploaded=True, validated=False)
-  6. Trigger async Rekognition check (fire-and-forget)
-  7. Broadcast paper_created WebSocket message with CDN URL
-  8. Return Paper with CDN URL
-  
-  Performance optimizations:
-  - No blob URLs in responses (reduces message size from ~2.67MB to ~100 bytes)
-  - Frontend uploader uses local file for instant feedback
-  - Other users receive CDN URL via WebSocket (already uploaded, fast to load)
-  - CDN URL sent immediately after S3 upload (no waiting for Rekognition)
-  """
+  """Reserve budget, publish immediately, then moderate in the background."""
   moderation_reserved = False
+  budget = None
   try:
     file_extension, content_type = validate_image_file(file)
     if not get_settings().local_file_storage:
@@ -166,8 +153,24 @@ async def create_paper_with_image(
         )
     
     # 6. Generate paper ID first (needed for S3 key)
+    if not await asyncio.to_thread(reserve_upload, user_id):
+      raise HTTPException(status_code=429, detail='Daily upload limit reached (50 uploads). Try again after midnight UTC.')
+
     from uuid import uuid4
     paper_id = uuid4().hex
+
+    if not get_settings().local_file_storage:
+      try:
+        minimum = 1
+        if file_extension == 'gif':
+          with Image.open(io.BytesIO(file_content)) as image:
+            minimum = min(8, image.n_frames)
+        budget = await asyncio.to_thread(reserve_moderation_calls, 8 if file_extension == 'gif' else 1, minimum)
+      except MonthlyModerationLimit as error:
+        raise HTTPException(status_code=429, detail=str(error)) from error
+      except Exception as error:
+        logger.error('Unable to reserve moderation budget', exc_info=True)
+        raise HTTPException(status_code=503, detail='Unable to check the upload budget. Please try again later.') from error
     
     # 7. Upload to S3 before creating the database record.
     try:
@@ -203,21 +206,15 @@ async def create_paper_with_image(
     )
     
     logger.info(f"Created paper {paper.id} for orb {orb_id} with CDN URL (username: {paper_username})")
-    
-    # 9. Trigger async Rekognition check (fire-and-forget, no Redis needed)
-    from app.workers.rekognition_async import check_image_safety_async
 
-    moderation_task = asyncio.create_task(
-      check_image_safety_async(
-        paper_id=paper.id,
-        orb_id=orb_id,
-        file_extension=file_extension,
-      )
-    )
+    from app.workers.rekognition_async import check_image_safety_async
+    moderation_task = asyncio.create_task(check_image_safety_async(
+      paper_id=paper.id, orb_id=orb_id, file_extension=file_extension, reservation=budget,
+    ))
+    budget = None  # Background worker owns the reservation from here.
     if moderation_reserved:
       moderation_task.add_done_callback(lambda _task: release_moderation_slot())
       moderation_reserved = False
-    logger.info(f"Started Rekognition check for paper {paper.id} (background task)")
     
     # 8. Broadcast paper_created WebSocket message with CDN URL
     # CDN URL is already available (uploaded to S3 synchronously)
@@ -245,6 +242,8 @@ async def create_paper_with_image(
       detail=f"Failed to create paper: {str(e)}"
     )
   finally:
+    if budget is not None:
+      await asyncio.to_thread(budget.close)
     if moderation_reserved:
       release_moderation_slot()
 

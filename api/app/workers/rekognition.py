@@ -5,6 +5,8 @@ from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config
+from app.services.usage import detect_moderation
 
 from app.config import get_settings
 from app.db.session import async_session_factory
@@ -61,6 +63,7 @@ def get_rekognition_client():
     aws_access_key_id=settings.aws_access_key_id,
     aws_secret_access_key=settings.aws_secret_access_key,
     region_name=rekognition_region,
+    config=Config(retries={'total_max_attempts': 1}, connect_timeout=5, read_timeout=20),
   )
 
 
@@ -92,7 +95,7 @@ def check_image_safety(
     
     # Call Rekognition API
     rekognition = get_rekognition_client()
-    response = rekognition.detect_moderation_labels(
+    response = detect_moderation(rekognition,
       Image=s3_uri,
       MinConfidence=settings.rekognition_min_confidence,
     )

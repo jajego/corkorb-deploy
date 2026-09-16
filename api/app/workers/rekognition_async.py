@@ -16,6 +16,7 @@ from app.schemas.paper import PaperUpdate
 from app.schemas.ws import PaperDeletedMessage
 from app.services import paper as paper_service, s3 as s3_service
 from app.services.gif import gif_moderation_images
+from app.services.usage import detect_moderation, MonthlyModerationLimit
 from app.ws.orb import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -85,10 +86,21 @@ def get_rekognition_client():
 
 
 async def check_image_safety_async(
+  paper_id: str, orb_id: str, file_extension: str, max_retries: int = 3, reservation=None,
+):
+  try:
+    await _check_image_safety_async(paper_id, orb_id, file_extension, max_retries, reservation)
+  finally:
+    if reservation is not None:
+      await asyncio.to_thread(reservation.close)
+
+
+async def _check_image_safety_async(
   paper_id: str,
   orb_id: str,
   file_extension: str,
   max_retries: int = 3,
+  reservation=None,
 ):
   """
   Check image for NSFW/CSAM content using AWS Rekognition (async, no Celery).
@@ -142,7 +154,11 @@ async def check_image_safety_async(
             if calls >= MAX_MODERATION_CALLS:
               raise ModerationBudgetExceeded()
             calls += 1
-            response = rekognition.detect_moderation_labels(
+            detect = reservation.detect if reservation is not None else detect_moderation
+            if reservation is not None and file_extension.lower() != 'gif' and attempt > 0 and reservation.remaining == 0:
+              # Static-image retries claim one new slot immediately before calling AWS.
+              detect = detect_moderation
+            response = detect(rekognition,
               Image=image, MinConfidence=settings.rekognition_min_confidence,
             )
             unsafe = [label for label in response.get('ModerationLabels', [])
@@ -188,6 +204,9 @@ async def check_image_safety_async(
         await mark_paper_validated(paper_id)
         return
         
+    except MonthlyModerationLimit:
+      logger.warning('Monthly Rekognition budget exhausted; paper %s remains unvalidated', paper_id)
+      return
     except ModerationBudgetExceeded:
       logger.error('Moderation call budget exhausted for paper %s; leaving unvalidated', paper_id)
       return

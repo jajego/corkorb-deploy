@@ -23,6 +23,7 @@ interface UsePaperCreationOptions {
   optimisticPapersByIdRef: React.MutableRefObject<Map<string, string>>
   placedPapersRef: React.MutableRefObject<PlacedPaper[]>
   enterExplore: () => void
+  onUploadError: (message: string) => void
 }
 
 /**
@@ -42,6 +43,7 @@ export function usePaperCreation({
   optimisticPapersByIdRef,
   placedPapersRef,
   enterExplore,
+  onUploadError,
 }: UsePaperCreationOptions) {
   const { getToken } = useAuth()
   const { user } = useUser()
@@ -236,6 +238,7 @@ export function usePaperCreation({
       })
       .catch((error) => {
         logger.error('Failed to upload image', error)
+        onUploadError(error instanceof Error ? error.message : 'Image upload failed. Please try again.')
         // Remove optimistic paper if upload fails
         setPlacedPapers((prev) => {
           const filtered = prev.filter((p) => p.id !== optimisticId)
@@ -253,6 +256,6 @@ export function usePaperCreation({
         // Dispose texture
         optimisticPaper.texture?.dispose()
       })
-  }, [pendingPaper, orbId, getToken, enterExplore, username, setPendingPaper, setPlacedPapers, setLastImageVector, setCameraOverride, ghostTransformRef, ghostGeometryRef, optimisticPapersRef, optimisticPapersByIdRef, placedPapersRef])
+  }, [pendingPaper, orbId, getToken, enterExplore, onUploadError, username, setPendingPaper, setPlacedPapers, setLastImageVector, setCameraOverride, ghostTransformRef, ghostGeometryRef, optimisticPapersRef, optimisticPapersByIdRef, placedPapersRef])
 }
 

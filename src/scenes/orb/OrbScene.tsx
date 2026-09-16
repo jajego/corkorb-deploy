@@ -133,7 +133,9 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
   })
 
   // Handle paper creation when pinning is complete
+  const handleUploadFailure = useCallback((message: string) => showToast(message, 'error'), [showToast])
   usePaperCreation({
+    onUploadError: handleUploadFailure,
     pendingPaper,
     orbId,
     setPendingPaper,

@@ -17,6 +17,14 @@ from app.routes import paper as route
 from app.schemas.paper import PaperResponse
 
 
+@pytest.fixture(autouse=True)
+def isolated_quotas(monkeypatch):
+  # Quota persistence/concurrency is tested separately; these tests never charge real usage.
+  monkeypatch.setattr(route, 'reserve_upload', lambda user_id: True)
+  monkeypatch.setattr(route, 'reserve_moderation_calls', lambda *args: Mock())
+  monkeypatch.setattr(worker, 'detect_moderation', lambda client, **kwargs: client.detect_moderation_labels(**kwargs))
+
+
 def make_gif(size=(4, 4), count=3):
   frames = [Image.new('RGB', size, (i % 256, 0, 0)) for i in range(count)]
   buffer = io.BytesIO()
@@ -90,6 +98,29 @@ async def test_busy_moderation_rejects_upload_before_storage(monkeypatch):
   upload.assert_not_called()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('limit', ['daily', 'monthly'])
+async def test_quota_rejects_before_storage(monkeypatch, limit):
+  monkeypatch.setattr(route, 'reserve_upload', lambda user_id: limit != 'daily')
+  monkeypatch.setattr(route, 'get_settings', lambda: SimpleNamespace(local_file_storage=limit == 'daily'))
+  monkeypatch.setattr(worker, '_pending_moderations', 0)
+  if limit == 'monthly':
+    monkeypatch.setattr(route, 'reserve_moderation_calls', Mock(side_effect=route.MonthlyModerationLimit('Monthly budget exhausted')))
+  monkeypatch.setattr(route, 'require_orb_access', AsyncMock())
+  upload = AsyncMock()
+  monkeypatch.setattr(route.s3_service, 'upload_image', upload)
+  with pytest.raises(HTTPException) as error:
+    await route.create_paper_with_image(
+      orb_id='orb', file=UploadFile(io.BytesIO(make_gif()), filename='test.gif'),
+      pin=json.dumps({'position': {'x': 0, 'y': 0, 'z': 1}, 'color': '#ff0000'}),
+      data=None, username=None, session=object(), user_info={'user_id': 'user'},
+    )
+  assert error.value.status_code == 429
+  assert ('50 uploads' if limit == 'daily' else 'Monthly budget') in error.value.detail
+  upload.assert_not_called()
+  assert worker._pending_moderations == 0
+
+
 @pytest.mark.parametrize('content', [b'GIF89a', b'not an image', make_gif((1025, 1)), make_gif(count=121), make_gif((1024, 1024), 33)],
                          ids=['truncated', 'invalid', 'dimensions', 'frame-count', 'pixel-budget'])
 def test_rejects_invalid_or_excessive_gifs(content):
@@ -133,7 +164,13 @@ async def test_upload_route_preserves_gif_or_rejects_before_storage(monkeypatch,
   monkeypatch.setattr(route.s3_service, 'upload_image', upload)
   monkeypatch.setattr(route, 'require_orb_access', AsyncMock())
   monkeypatch.setattr(route.connection_manager, 'broadcast_to_orb', AsyncMock())
-  moderation = AsyncMock()
+  finish_moderation = asyncio.Event()
+  moderation_completed = False
+  async def delayed_moderation(**kwargs):
+    nonlocal moderation_completed
+    await finish_moderation.wait()
+    moderation_completed = True
+  moderation = AsyncMock(side_effect=delayed_moderation)
   monkeypatch.setattr(worker, 'check_image_safety_async', moderation)
   response = PaperResponse(
     id='paper', orb_id='orb', user_id='user', created_at=datetime.now(timezone.utc),
@@ -154,6 +191,9 @@ async def test_upload_route_preserves_gif_or_rejects_before_storage(monkeypatch,
     assert result.source_url.endswith('.gif')
     assert upload.call_args.kwargs['file_content'] == content
     assert upload.call_args.kwargs['content_type'] == 'image/gif'
+    route.connection_manager.broadcast_to_orb.assert_awaited_once()
+    assert not moderation_completed  # Upload and broadcast finish without waiting for AWS.
+    finish_moderation.set()
     await asyncio.sleep(0)
     await asyncio.sleep(0)  # Run the background task's slot-release callback.
     moderation.assert_awaited_once()
