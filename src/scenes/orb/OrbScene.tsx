@@ -44,7 +44,7 @@ import {
 } from './utils/constants'
 import { orientPaperToCamera } from './utils/paperOrientation'
 import { applyLayerOffsetToGeometry } from './utils/texture'
-import { computeNextLayerOffset, makeId } from './utils/paper'
+import { makeId } from './utils/paper'
 import { useOrbInitialLoad } from './hooks/useOrbInitialLoad'
 import { useCameraSpherical } from './hooks/useCameraSpherical'
 import { useOptimisticPapers } from './hooks/useOptimisticPapers'
@@ -119,7 +119,6 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
   const cameraInteractionEnabled = state.mode === ORB_MODE.Explore
   const attachActive = state.mode === ORB_MODE.Attach
   const pendingStage = pendingPaper?.stage
-  const nextLayerOffset = useMemo(() => computeNextLayerOffset(placedPapers), [placedPapers])
 
   useOrbInitialLoad({
     orbId,
@@ -176,7 +175,6 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
   const { handleFileSelection: handleFileSelectionFromHook } = usePaperUpload({
     onFileSelected: handleFileSelected,
     onError: handleFileUploadError,
-    nextLayerOffset,
   })
 
   // Wrapper to handle pointer position from drag events
@@ -557,7 +555,7 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
   }, [cameraOverride, attachActive, cameraInteractionEnabled, setCameraOverride])
 
   const sortedPlacedPapers = useMemo(
-    () => [...placedPapers].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    () => [...placedPapers].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)),
     [placedPapers]
   )
 
@@ -576,7 +574,7 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
     let basisUp: THREE.Vector3 | null = null
     let positionsClone: Float32Array | undefined
     let normalsClone: Float32Array | undefined
-    const layerOffset = pendingPaper.layerOffset ?? nextLayerOffset
+    const layerOffset = pendingPaper.layerOffset
 
     if (cachedTransform) {
       center = cachedTransform.center.clone()
@@ -750,7 +748,8 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
             scale={pendingPaper.scale}
             pointer={pointerForInteraction}
             rotation={pendingPaper.rotation}
-            layerOffset={pendingPaper.layerOffset ?? nextLayerOffset}
+            layerOffset={pendingPaper.layerOffset}
+            renderOrder={sortedPlacedPapers.length + 1}
             shape={orbShape}
             surfaceRef={surfaceMeshRef}
             onTransformChange={(transform) => {
@@ -773,7 +772,7 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
             }}
           />
         ) : null}
-        {sortedPlacedPapers.map((paper) => (
+        {sortedPlacedPapers.map((paper, index) => (
             <PinnedPaper
               key={paper.id}
               texture={paper.texture}
@@ -788,6 +787,7 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
               normals={paper.normals}
               pins={paper.pins}
               layerOffset={paper.layerOffset}
+              renderOrder={index + 1}
               rotation={paper.rotation}
               userId={paper.userId}
               username={paper.username}
@@ -817,6 +817,7 @@ export function OrbScene({ orbId, initialShape }: OrbSceneProps) {
             normals={pendingPaper.normals}
             pins={pendingPaper.pins}
             layerOffset={pendingPaper.layerOffset}
+            renderOrder={sortedPlacedPapers.length + 1}
             rotation={pendingPaper.rotation}
             userId={pendingPaper.userId}
             username={username}

@@ -55,6 +55,7 @@ type GhostPaperProps = {
   pointer: PointerState
   rotation?: number
   layerOffset?: number
+  renderOrder?: number
   shape: CorkShape
   surfaceRef: React.RefObject<THREE.Mesh | null>
   onTransformChange?: (transform: GhostPaperTransform) => void
@@ -92,6 +93,7 @@ export function GhostPaper({
   pointer,
   rotation = 0,
   layerOffset = 0,
+  renderOrder = 0,
   shape,
   surfaceRef,
   onTransformChange,
@@ -347,7 +349,7 @@ export function GhostPaper({
   })
 
   return (
-    <mesh ref={meshRef} geometry={geometry} renderOrder={layerOffset} visible={false} onBeforeRender={() => updateGifTexture(texture)}>
+    <mesh ref={meshRef} geometry={geometry} renderOrder={renderOrder} visible={false} onBeforeRender={() => updateGifTexture(texture)}>
       <primitive ref={geometryRef} object={geometry} attach="geometry" />
       <meshStandardMaterial
         ref={materialRef}

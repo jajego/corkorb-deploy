@@ -17,7 +17,6 @@ const MAX_ORIGINAL_SIZE = 20 * 1024 * 1024 // 20MB (allow larger originals since
 interface UsePaperUploadOptions {
   onFileSelected: (pendingPaper: PendingPaper) => void
   onError: (message: string) => void
-  nextLayerOffset: number
 }
 
 /**
@@ -26,7 +25,6 @@ interface UsePaperUploadOptions {
 export function usePaperUpload({
   onFileSelected,
   onError,
-  nextLayerOffset,
 }: UsePaperUploadOptions) {
   const { isSignedIn, userId } = useAuth()
 
@@ -95,7 +93,7 @@ export function usePaperUpload({
           scale: DEFAULT_PAPER_SCALE,
           stage: 'positioning',
           pins: [],
-          layerOffset: nextLayerOffset,
+          layerOffset: 0,
           rotation: 0,
           userId: userId || 'anonymous',
           sourceFile: compressedFile, // Use compressed file for upload
@@ -128,7 +126,7 @@ export function usePaperUpload({
               scale: DEFAULT_PAPER_SCALE,
               stage: 'positioning',
               pins: [],
-              layerOffset: nextLayerOffset,
+              layerOffset: 0,
               rotation: 0,
               userId: userId || 'anonymous',
               sourceFile: file,
@@ -143,7 +141,7 @@ export function usePaperUpload({
         }
       }
     },
-    [isSignedIn, userId, nextLayerOffset, onFileSelected, onError]
+    [isSignedIn, userId, onFileSelected, onError]
   )
 
   return { handleFileSelection }

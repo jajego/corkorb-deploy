@@ -46,6 +46,7 @@ type PinnedPaperProps = {
   normals?: Float32Array
   pins?: PinData[]
   layerOffset?: number
+  renderOrder?: number
   rotation?: number
   interactive?: boolean
   showTooltip?: boolean
@@ -75,6 +76,7 @@ export function PinnedPaper({
   normals,
   pins = [],
   layerOffset = 0,
+  renderOrder = 0,
   rotation = 0,
   interactive = false,
   showTooltip = false,
@@ -184,7 +186,7 @@ export function PinnedPaper({
         basisUp,
         halfWidth,
         halfHeight,
-        paperOffset
+        POLYHEDRON_PAPER_OFFSET
       )
       geometry.setAttribute('position', new THREE.BufferAttribute(folded.positions, 3))
       geometry.setAttribute('normal', new THREE.BufferAttribute(folded.normals, 3))
@@ -205,6 +207,13 @@ export function PinnedPaper({
     if (positions && normals && positions.length && normals.length) {
       positionsAttr.array.set(positions)
       normalsAttr.array.set(normals)
+      // Legacy uploads stored cumulative height in their vertices.
+      for (let i = 0; i < positionsAttr.count; i++) {
+        positionsAttr.setXYZ(i,
+          positionsAttr.getX(i) - normalsAttr.getX(i) * layerOffset,
+          positionsAttr.getY(i) - normalsAttr.getY(i) * layerOffset,
+          positionsAttr.getZ(i) - normalsAttr.getZ(i) * layerOffset)
+      }
       let index = 0
       for (let y = 0; y <= PAPER_SEGMENTS_Y; y++) {
         const v = (y / PAPER_SEGMENTS_Y - 0.5) * 2
@@ -240,7 +249,7 @@ export function PinnedPaper({
           rotationCombined.multiplyQuaternions(rotationX, rotationY)
 
           normalVec.copy(centerVec.clone().normalize()).applyQuaternion(rotationCombined)
-          vertexPosition.copy(normalVec).multiplyScalar(baseRadius)
+          vertexPosition.copy(normalVec).multiplyScalar(baseRadius - layerOffset)
 
           positionsAttr.setXYZ(index, vertexPosition.x, vertexPosition.y, vertexPosition.z)
           normalsAttr.setXYZ(index, normalVec.x, normalVec.y, normalVec.z)
@@ -321,13 +330,16 @@ export function PinnedPaper({
         .applyQuaternion(quaternionValue)
         .normalize()
         .clone()
+      // Move pins with their paper; sphere pins use the normal at the pin itself.
+      const liftNormal = shape === 'sphere' ? basePosition.clone().normalize() : normal
+      basePosition.addScaledVector(liftNormal, -layerOffset)
       const offsetPosition = basePosition.clone().addScaledVector(normal, PIN_OFFSET)
 
       const color = pin.color ?? '#ff4d4f'
 
       return { id: pin.id, position: offsetPosition, basePosition, color, normal: explicitNormal }
     })
-  }, [pins, quaternionValue])
+  }, [pins, quaternionValue, shape, layerOffset])
 
   // Check visibility of pins when showTooltip is enabled
   useFrame(() => {
@@ -443,7 +455,8 @@ export function PinnedPaper({
     <group>
       <mesh
         ref={meshRef}
-        renderOrder={layerOffset}
+        // Papers share the surface height; draw order resolves only overlapping pixels.
+        renderOrder={renderOrder}
         onBeforeRender={() => updateGifTexture(texture)}
         onAfterRender={() => markPaperLoadStage('first-paper-drawn')}
         geometry={geometry}
@@ -517,4 +530,3 @@ export function PinnedPaper({
     </group>
   )
 }
-
